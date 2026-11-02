@@ -39,7 +39,10 @@ ARROWS = os.path.join(BASEMAP, "Basemap_v4", "Basemap_v4.geojson")
 PROJ4 = "+proj=laea +lat_0=60 +lon_0=-32.5 +datum=WGS84 +units=m"
 
 # --- the block -----------------------------------------------------------------
-X0, X1, Y0, Y1 = -1900.0, 1900.0, -1350.0, 1250.0    # km, matches the gdalwarp -te
+DEM_Y0 = -1350.0                                     # km, south edge of block_5km.bil (the gdalwarp -te)
+X0, X1, Y0, Y1 = -1900.0, 1900.0, -1050.0, 1250.0    # km, the block drawn; Y0 moved north 2 Nov (was -1350):
+#   the front wall now cuts north of the Grand Banks, so the deep return flow leaves through 2,750 m of water
+#   instead of beside the shelf plateau that hid it. Corners 47.3° N, centre 50.6° N. Y0 >= DEM_Y0.
 CELL = 5.0                                           # km
 ZBASE = -5600.0                                      # floor of the block, m
 CLEAR = 500.0                                        # m a deep line keeps above the floor, so the painter's order cannot bury it
@@ -160,6 +163,7 @@ def fit():
 def load_dem():
     H = np.fromfile(os.path.join(DATA, "block_5km.bil"), dtype=np.float32).reshape(520, 760)
     H = H[::-1].astype(float)                     # row 0 = south
+    H = H[int(round((Y0 - DEM_Y0) / CELL)):]      # drop the rows south of the drawn block
     ny, nx = H.shape
     xs = X0 + (np.arange(nx) + 0.5) * CELL
     ys = Y0 + (np.arange(ny) + 0.5) * CELL
