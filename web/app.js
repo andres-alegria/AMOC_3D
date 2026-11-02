@@ -349,10 +349,7 @@ function camAngles() {
   const el = THREE.MathUtils.radToDeg(Math.atan2(d.z, Math.hypot(d.x, d.y)));
   return { az, el, dist: d.length() };
 }
-function updateCamOut() {
-  const { az, el, dist } = camAngles();
-  document.getElementById("camOut").textContent = `az ${az.toFixed(0)}° · elev ${el.toFixed(0)}° · ${(dist).toFixed(0)} km`;
-}
+function updateCamOut() {}   // the camera readout was removed from the panel (2 Nov); camAngles() still names the Save-PNG file
 function setOrtho(on) {
   const { az, el, dist } = camAngles();
   const from = camera;
