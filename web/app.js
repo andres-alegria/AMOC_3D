@@ -23,7 +23,7 @@ const LIGHT_DIR = new THREE.Vector3(-1, 1, 1.4);   // light from the north-west,
 const DEFAULT = { az: 180, el: 41, exag: 85 };
 
 // data files live next to this script (web/data/), wherever the page itself is served from
-const DATA_V = "13";   // bump after re-running export_web.py so browsers drop their cached data files
+const DATA_V = "16";   // bump after re-running export_web.py so browsers drop their cached data files
 const D = name => new URL("data/" + name + "?v=" + DATA_V, import.meta.url);
 const stage = document.getElementById("stage");
 const status = document.getElementById("status");
@@ -226,11 +226,12 @@ function buildArrows(arrows) {
 function buildPlumes(plumes) {
   const grp = layer("plumes");
   const mat = new THREE.MeshBasicMaterial({ color: col("--plume"), transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide });
-  for (const p of plumes) {
+  for (const p of plumes) {                       // each site: an outline (block km) extruded from the surface down to zb
     const h = -p.zb / 1000;
-    const g = new THREE.CylinderGeometry(p.r, p.r * 0.85, h, 48, 1, false);
+    const shape = new THREE.Shape(p.outline.map(([x, y]) => new THREE.Vector2(x, y)));
+    const g = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false });
     const m = new THREE.Mesh(g, mat);
-    m.rotation.x = Math.PI / 2; m.position.set(p.x, p.y, -h / 2);
+    m.position.z = -h;
     grp.add(m);
   }
 }

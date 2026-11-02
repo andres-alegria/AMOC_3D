@@ -85,7 +85,7 @@ def main():
                     if at_face and inbound:             # inflow: stub + inside path as one ribbon
                         piece = np.vstack([stub[:-1], piece])
                         out["front"].append(dict(cls="surface", x=round(float(stub[0, 0]), 1), y=round(float(stub[0, 1]), 1), z=0.0, text=B.FRONT_LABELS["Red"],
-                                                 side=-1 if stub[1, 0] > stub[0, 0] else 1))
+                                                 side=B.FRONT_LABEL_SIDE.get("Red", -1 if stub[1, 0] > stub[0, 0] else 1)))
                     zz = np.zeros(len(piece))
                 elif p["Notes"] == "Blue":
                     if p["id"] in B.DEEP_SNAP["ids"]:
@@ -97,7 +97,7 @@ def main():
                         out["arrows"].append(dict(id=p["id"], cls="deep", type=p["Type"], w=int(p["Thickness"]), head=True,
                                                   p=np.round(np.column_stack([stub, np.full(len(stub), zs)]), 1).tolist()))
                         out["front"].append(dict(cls="deep", x=round(float(stub[-1, 0]), 1), y=round(float(stub[-1, 1]), 1), z=round(zs), text=B.FRONT_LABELS["Blue"],
-                                                 side=-1 if stub[-2, 0] > stub[-1, 0] else 1))
+                                                 side=B.FRONT_LABEL_SIDE.get("Blue", -1 if stub[-2, 0] > stub[-1, 0] else 1)))
                 else:   # the sinking ribbon: surface → deep along its length, with the descent fraction s for the colour
                     z_deep = B.smooth_z(np.maximum(-2000.0, fl(piece[:, 0], piece[:, 1]) + B.CLEAR))
                     s, zz = B.conv_profile(piece, z_deep)
@@ -124,9 +124,12 @@ def main():
         if B.X0 <= lx[0] <= B.X1 and B.Y0 <= ly[0] <= B.Y1:
             out["labels"].append(dict(x=round(float(lx[0]), 1), y=round(float(ly[0]), 1), text=text, kind=kind))
 
-    for plon, plat, r, zb in B.PLUMES:
-        px, py = B.ll_to_block(np.array([plon]), np.array([plat]))
-        out["plumes"].append(dict(x=round(float(px[0]), 1), y=round(float(py[0]), 1), r=r, zb=zb, lon=plon, lat=plat))
+    for site in B.PLUMES:                      # formation sites as clipped outlines (block km) + bottom depth
+        po = B.plume_outline(site, floor, xs, ys)
+        if po is None:
+            continue
+        ring, cen, req = po
+        out["plumes"].append(dict(name=site["name"], zb=site["zb"], outline=np.round(ring, 1).tolist()))
 
     json.dump(out, open(os.path.join(OUT, "lines.json"), "w"), separators=(",", ":"))
 

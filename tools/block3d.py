@@ -84,12 +84,19 @@ DRAW_MID = False                              # the 500–1200 m band, off by de
 RIBBON_W = (0.9, 3.4)                          # px, slow → fast
 ARROW_W = {1: 5.0, 2: 9.0, 3: 14.0}            # px per Thickness class
 
-# --- deep-water formation plumes (placeholders for v0) — adjust here ---------------
-PLUMES = [  # lon, lat, radius km, bottom m — the purple "deep-water formation" clouds of Fig. 1.1
-    (-52.5, 57.5, 170, -1900),   # Labrador Sea
-    (-38.0, 60.0, 150, -1700),   # Irminger Sea
-    (-15.0, 68.5, 130, -1600),   # Iceland Sea
+# --- deep-water formation sites — adjust here ----------------------------------------
+# The purple "deepwater formation" clouds of Fig. 1.1. Each site is an outline in lon/lat (a hand-drawn
+# polygon, or a circle given as (lon, lat, radius km)) and a bottom depth. Outlines are clipped to water
+# deeper than PLUME_MIN_DEPTH, so a cloud drawn around Cape Farewell never covers Greenland's plateau.
+PLUMES = [
+    dict(name="Labrador–Irminger", zb=-1800.0,      # one cloud around southern Greenland, as in Fig. 1.1 (2 Nov)
+         outline=[(-57.5, 58.5), (-56.5, 60.5), (-53.0, 61.2), (-49.0, 60.2), (-45.0, 59.2), (-41.0, 60.8),
+                  (-38.0, 63.2), (-34.0, 63.8), (-30.5, 62.0), (-31.5, 59.0), (-35.5, 57.3), (-41.0, 56.3),
+                  (-46.0, 55.4), (-51.0, 55.2), (-55.0, 56.3)]),
+    dict(name="Iceland Sea", zb=-1600.0, outline=(-15.0, 68.5, 130)),
 ]
+PLUME_MIN_DEPTH = -700.0        # m: the clouds exist only over floor deeper than this
+PLUME_SMOOTH = 4                # smoothing passes on the clipped outline
 WISPS = dict(n=0, height=2600.0, spread=0.38, amp=0.07, lw=(2.4, 0.5))   # heat-loss wisps above each plume (n=0: off, dropped 2 Nov): count, height m (exaggerated), spread/amplitude as fraction of radius, line width px thick → thin
 CONV_FADE = (0.08, 0.92)        # along a Convection arrow: fraction where the descent starts / ends
 CONV_SPLIT = -60.0              # m: shallower than this the sinking ribbon is drawn above the sea surface
@@ -100,6 +107,7 @@ DRAW_WATER = False              # translucent sea surface + water column on the 
 FRONT_STUB = dict(length=520.0, leader=22, drop=14, match_outflow=True)   # leader px sideways/down from the tip to the label; match_outflow: the inflow stub reaches as far south as the outflow tip
 SURF_SEED = -250.0              # m: VIKING surface ribbons are seeded only over floor deeper than this (they sit at BANDS z)
 FRONT_LABELS = dict(Red="Warm surface flow", Blue="Cold deep return flow")   # labels pointing at the stubs
+FRONT_LABEL_SIDE = dict(Red=1)  # force a label side (+1 right, -1 left); classes not listed go to the side away from the ribbon
 # deep (Blue) arrows: Fig. 1.1 drew them on a flat map, running over the shelves. In 3D a boundary current
 # belongs at the slope foot, so each vertex of the arrows listed in `ids` is walked downslope (toward the
 # deepest floor on a ring of radius `look` km, in `step` km moves) until the floor is deeper than `target`;
@@ -117,8 +125,8 @@ LABELS = [
     (-44.5, 70.5, "Greenland", "land"), (-18.5, 64.9, "Iceland", "land"), (-62.0, 54.5, "Labrador", "land"),
     (-3.5, 56.5, "Scotland", "land"), (9.0, 62.0, "Norway", "land"), (-55.5, 60.0, "Labrador\nSea", "sea"),
     (-36.5, 62.5, "Irminger\nSea", "sea"), (-24.0, 60.0, "Iceland Basin", "sea"), (-6.0, 69.0, "Nordic Seas", "sea"),
-    (-26.5, 68.0, "Denmark Strait", "feature"), (-8.5, 62.6, "Faroe Bank\nChannel", "feature"),
-    (-45.5, 57.0, "deep-water\nconversion", "flow"),
+    (-26.5, 68.0, "Denmark Strait", "feature"),
+    (-45.5, 57.0, "Deep-water\nconversion", "flow"),
     (-52.5, 51.5, "OSNAP West", "obs"), (-14.5, 56.6, "OSNAP East", "obs"),
 ]
 
@@ -429,6 +437,35 @@ def clip_to_block(pts):
     return [p for p in pieces if len(p) >= 2]
 
 
+def plume_outline(site, floor, xs, ys):
+    """Block-km outline of a formation site: the lon/lat polygon (or circle) clipped to floor < PLUME_MIN_DEPTH,
+    as the longest 0.5-contour of the inside-and-deep mask, smoothed. Also returns its centroid and an
+    equivalent radius (for the wisps)."""
+    import contourpy
+    from matplotlib.path import Path
+    o = site["outline"]
+    if len(o) == 3 and not hasattr(o[0], "__len__"):       # circle: lon, lat, radius km
+        cx, cy = ll_to_block(np.array([o[0]]), np.array([o[1]]))
+        ang = np.linspace(0, 2 * np.pi, 72, endpoint=False)
+        poly = np.column_stack([cx[0] + o[2] * np.cos(ang), cy[0] + o[2] * np.sin(ang)])
+    else:
+        lon, lat = np.array(o, float).T
+        bx, by = ll_to_block(lon, lat)
+        poly = smooth(np.vstack([np.column_stack([bx, by]), [[bx[0], by[0]]]]), 2)[:-1]
+    X, Y = np.meshgrid(xs, ys)
+    inside = Path(poly).contains_points(np.column_stack([X.ravel(), Y.ravel()])).reshape(X.shape)
+    mask = (inside & (floor < PLUME_MIN_DEPTH)).astype(float)
+    lines = contourpy.contour_generator(x=xs, y=ys, z=mask).lines(0.5)
+    if not lines:
+        return None
+    ring = max(lines, key=len)
+    for _ in range(PLUME_SMOOTH):                           # closed running mean
+        ring = (np.roll(ring, 1, 0) + 2 * ring + np.roll(ring, -1, 0)) / 4
+    ring = ring[::max(1, len(ring) // 160)]                 # ~160 vertices are plenty for the walls
+    c = ring.mean(0); r = float(np.sqrt(abs(0.5 * np.sum(ring[:, 0] * np.roll(ring[:, 1], -1) - np.roll(ring[:, 0], -1) * ring[:, 1])) / np.pi))
+    return ring, c, r
+
+
 def south_crossing(P):
     """First segment of path P (block km) that crosses the front face y = Y0 inside the block's x range."""
     for i in range(len(P) - 1):
@@ -712,17 +749,19 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
                     qq, cc, _ = ribbon_quads_z(rp, rz, OSNAP["mooring_lw"], np.append(hex2rgb(PAL["osnap"]), OSNAP["mooring_alpha"]))
                     deep_items.append((qq, cc))
 
-    # plumes: translucent columns from the surface down
-    plume_tops = []
-    for plon, plat, r, zb in PLUMES:
-        px, py = ll_to_block(np.array([plon]), np.array([plat]))
-        ang = np.linspace(0, 2 * np.pi, 48)
-        ring = np.column_stack([px[0] + r * np.cos(ang), py[0] + r * np.sin(ang)])
-        sx0, sy0 = project(ring[:, 0], ring[:, 1], 0.0); sx1, sy1 = project(ring[:, 0], ring[:, 1], zb)
-        # body = convex hull of top and bottom ellipses, approximated by the outer silhouette
-        body = np.vstack([np.column_stack([sx0, sy0]), np.column_stack([sx1, sy1])[::-1]])
-        _, dpl = to_view(px[0], py[0])
-        quads.append(body); cols.append(np.append(hex2rgb(PAL["plume"]), 0.22)); depth.append(float(dpl))
+    # formation sites: translucent prisms from the surface down to zb, walls sorted with the floor
+    plume_tops, plume_sites = [], []
+    for site in PLUMES:
+        po = plume_outline(site, floor, xs, ys)
+        if po is None:
+            continue
+        ring, cen, req = po; plume_sites.append((ring, cen, req, site["zb"]))
+        sx0, sy0 = project(ring[:, 0], ring[:, 1], 0.0); sx1, sy1 = project(ring[:, 0], ring[:, 1], site["zb"])
+        _, dwall = to_view(ring[:, 0], ring[:, 1])
+        for i in range(len(ring)):                           # one wall quad per outline segment
+            j = (i + 1) % len(ring)
+            quads.append(np.array([[sx0[i], sy0[i]], [sx0[j], sy0[j]], [sx1[j], sy1[j]], [sx1[i], sy1[i]]]))
+            cols.append(np.append(hex2rgb(PAL["plume"]), 0.11)); depth.append(float((dwall[i] + dwall[j]) / 2))
         plume_tops.append(np.column_stack([sx0, sy0]))
 
     # paint A+B back to front
@@ -802,9 +841,8 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
                                          edgecolors=[c2[i] for i in order], linewidths=0.35, zorder=6))
 
     # heat-loss wisps above the plumes (drawn last among scene items; they rise above the surface)
-    for plon, plat, r, zb in PLUMES:
-        px, py = ll_to_block(np.array([plon]), np.array([plat]))
-        for x, y, u in wisp_paths(px[0], py[0], r):
+    for ring, (pcx, pcy), r, zb in plume_sites:
+        for x, y, u in wisp_paths(pcx, pcy, r):
             pts = np.column_stack([x, y]); segs = np.stack([pts[:-1], pts[1:]], 1)
             lws = WISPS["lw"][0] + (WISPS["lw"][1] - WISPS["lw"][0]) * u[:-1]
             cols = [np.append(hex2rgb(PAL["plume"]), 0.85 * (1 - 0.8 * uu)) for uu in u[:-1]]
@@ -826,7 +864,7 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
     # in/outflow labels: a tick from each stub tip, text on the side away from where the ribbon continues
     for cls, (tx, ty), (nx_, ny_), tz in front_tips:
         sx, sy = project(np.array([tx, nx_]), np.array([ty, ny_]), np.array([tz, tz]))
-        side = -1 if sx[1] > sx[0] else 1                  # ribbon runs right from the tip → label on the left
+        side = FRONT_LABEL_SIDE.get(cls, -1 if sx[1] > sx[0] else 1)   # default: the side away from the ribbon
         lx_, ly_ = sx[0] + FRONT_STUB["leader"] * side, sy[0] + FRONT_STUB["drop"]
         ax.plot([sx[0] + 4 * side, lx_], [sy[0] + 3, ly_], color=PAL["ink"], lw=0.6, zorder=8)
         ax.text(lx_ + 4 * side, ly_, FRONT_LABELS[cls], ha="left" if side > 0 else "right",
