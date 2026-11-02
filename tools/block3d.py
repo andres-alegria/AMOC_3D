@@ -87,9 +87,16 @@ PLUMES = [  # lon, lat, radius km, bottom m — the purple "deep-water formation
     (-38.0, 60.0, 150, -1700),   # Irminger Sea
     (-15.0, 68.5, 130, -1600),   # Iceland Sea
 ]
-WISPS = dict(n=3, height=2600.0, spread=0.38, amp=0.07, lw=(2.4, 0.5))   # heat-loss wisps above each plume: count, height m (exaggerated), spread/amplitude as fraction of radius, line width px thick → thin
+WISPS = dict(n=0, height=2600.0, spread=0.38, amp=0.07, lw=(2.4, 0.5))   # heat-loss wisps above each plume (n=0: off, dropped 2 Nov): count, height m (exaggerated), spread/amplitude as fraction of radius, line width px thick → thin
 CONV_FADE = (0.08, 0.92)        # along a Convection arrow: fraction where the descent starts / ends
 CONV_SPLIT = -60.0              # m: shallower than this the sinking ribbon is drawn above the sea surface
+# deep (Blue) arrows: Fig. 1.1 drew them on a flat map, running over the shelves. In 3D a boundary current
+# belongs at the slope foot, so each vertex of the arrows listed in `ids` is walked downslope (toward the
+# deepest floor on a ring of radius `look` km, in `step` km moves) until the floor is deeper than `target`;
+# a vertex that finds no such water within `max_km` stays put, and unreached vertices at either end are
+# trimmed. Only the Labrador / Newfoundland boundary-current arrows are listed: the overflow arrows
+# (Denmark Strait, Iceland–Scotland) descend the sills on purpose and keep their drawn paths.
+DEEP_SNAP = dict(ids=(27, 29, 31), target=-2500.0, step=4.0, look=30.0, max_km=250.0)
 
 # --- the observing array ------------------------------------------------------------
 OSNAP_CSV = os.path.join(DATA, "osnap_section.csv")
@@ -568,6 +575,8 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
                     if p["Notes"] == "Red":
                         zz = np.zeros(len(piece)); colr = hex2rgb(PAL["arrow_surf"])
                     else:
+                        if p["id"] in DEEP_SNAP["ids"]:
+                            piece = offshore(piece, floor_at)    # boundary currents hug the slope foot, not the shelf
                         zz = np.maximum(-2000.0, floor_at(piece[:, 0], piece[:, 1]) + CLEAR); colr = hex2rgb(PAL["arrow_deep"])
                     if p["Notes"] == "Red":
                         qq, cc, dd = ribbon_quads_z(piece, zz, wpx, colr)
@@ -732,6 +741,36 @@ def ramp3(stops, t):
     out[lo] = c[0] + (c[1] - c[0]) * (t[lo] / 0.5)[:, None]
     out[~lo] = c[1] + (c[2] - c[1]) * ((t[~lo] - 0.5) / 0.5)[:, None]
     return out
+
+
+def offshore(piece, floor_fn, **kw):
+    """Nudge a deep-arrow path offshore: every vertex over a floor shallower than DEEP_SNAP['target'] walks
+    downslope (toward the deepest floor on a ring of radius `look`) until it is over deep water. Vertices
+    that cannot get there within `max_km` are left in place. Returns a re-densified, smoothed path."""
+    c = dict(DEEP_SNAP); c.update(kw)
+    ang = np.linspace(0, 2 * np.pi, 24, endpoint=False)
+    ring = np.column_stack([np.cos(ang), np.sin(ang)]) * c["look"]
+    out, ok = [], []
+    for x, y in piece:
+        x0, y0, moved = x, y, 0.0
+        while float(floor_fn(x, y)) > c["target"] and moved < c["max_km"]:
+            cand = np.asarray(floor_fn(x + ring[:, 0], y + ring[:, 1]), float)
+            k = int(np.argmin(cand))
+            if cand[k] >= float(floor_fn(x, y)):
+                break                                   # local bowl with nothing deeper around: give up
+            x += ring[k, 0] / c["look"] * c["step"]; y += ring[k, 1] / c["look"] * c["step"]; moved += c["step"]
+        reached = float(floor_fn(x, y)) <= c["target"]
+        if not reached:
+            x, y = x0, y0                               # could not reach deep water: keep the drawn position
+        if not out or np.hypot(x - out[-1][0], y - out[-1][1]) > 1.0:
+            out.append((x, y)); ok.append(reached)
+    out, ok = np.array(out), np.array(ok)
+    if ok.any():                                        # trim shelf stubs at both ends; keep interior gaps (sills)
+        i0, i1 = int(np.argmax(ok)), len(ok) - int(np.argmax(ok[::-1]))
+        out = out[i0:i1]
+    if len(out) < 2:
+        return piece
+    return smooth(densify(out), 3)
 
 
 def conv_profile(piece, z_deep):

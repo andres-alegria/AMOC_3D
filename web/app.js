@@ -59,21 +59,17 @@ function layer(name) { if (!layers[name]) { layers[name] = new THREE.Group(); wo
 
 // --------------------------------------------------------------------------------------
 async function load() {
-  const [meta, floorBuf, lines, land, ice] = await Promise.all([
+  const [meta, floorBuf, lines] = await Promise.all([
     fetch(D("meta.json")).then(r => r.json()),
     fetch(D("floor.f32")).then(r => r.arrayBuffer()),
     fetch(D("lines.json")).then(r => r.json()),
-    fetch(D("land.json")).then(r => r.json()),
-    fetch(D("ice.json")).then(r => r.json()),
   ]);
   const floor = new Float32Array(floorBuf);
   buildFloor(meta, floor);
   buildFaces(meta, floor);
-  buildWater(meta);
-  buildLand(land, ice);
   buildRibbons(lines);
   buildArrows(lines.arrows);
-  buildPlumes(lines.plumes, lines.wisps);
+  buildPlumes(lines.plumes);
   buildOsnap(lines.osnap);
   buildLabels(lines.labels);
   buildDepthScale(meta);
@@ -142,12 +138,9 @@ function buildFaces(m, floor) {
   edges.push(south, north, west, east);
 
   const crustMat = new THREE.MeshLambertMaterial({ color: col("--face-crust"), side: THREE.DoubleSide });
-  const waterMat = new THREE.MeshBasicMaterial({ color: col("--face-water"), transparent: true,
-    opacity: parseFloat(tok("--face-water-alpha")), side: THREE.DoubleSide, depthWrite: false });
   for (const e of edges) {
-    const top0 = e.map(p => [p[0], p[1], 0]), fl = e.map(p => [p[0], p[1], p[2]]), base = e.map(p => [p[0], p[1], zbase / 1000]);
-    layer("faces").add(new THREE.Mesh(strip(fl, base), crustMat));
-    layer("faceWater").add(new THREE.Mesh(strip(top0, fl), waterMat));
+    const fl = e.map(p => [p[0], p[1], p[2]]), base = e.map(p => [p[0], p[1], zbase / 1000]);
+    layer("faces").add(new THREE.Mesh(strip(fl, base), crustMat));   // crust only: the water column above the floor is left open
     // the floor profile as a hairline on the face
     const g = new THREE.BufferGeometry().setFromPoints(fl.map(p => new THREE.Vector3(...p)));
     layer("faces").add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: col("--ink-soft") })));
@@ -165,38 +158,6 @@ function buildFaces(m, floor) {
   for (const p of o.slice(0, 4)) {
     const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(p[0], p[1], 0), new THREE.Vector3(p[0], p[1], zbase / 1000)]);
     layer("faces").add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: col("--ink-soft") })));
-  }
-}
-
-function buildWater(m) {
-  const { x0, y0, x1, y1 } = m;
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, y1 - y0),
-    new THREE.MeshBasicMaterial({ color: col("--water"), transparent: true, opacity: parseFloat(tok("--water-alpha")), depthWrite: false }));
-  mesh.position.set((x0 + x1) / 2, (y0 + y1) / 2, 0.001);
-  layer("water").add(mesh);
-}
-
-// --- land plates (vector polygons, earcut-triangulated by ShapeGeometry) ---------------------
-function shapesFrom(polys) {
-  const shapes = [];
-  for (const rings of polys) {
-    if (rings[0].length < 4) continue;
-    const sh = new THREE.Shape(rings[0].map(p => new THREE.Vector2(p[0], p[1])));
-    for (const h of rings.slice(1)) if (h.length >= 4) sh.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p[0], p[1]))));
-    shapes.push(sh);
-  }
-  return shapes;
-}
-function buildLand(land, ice) {
-  const Z = 0.015;   // km above the sea surface (scaled by the exaggeration like everything else)
-  const lm = new THREE.Mesh(new THREE.ShapeGeometry(shapesFrom(land)), new THREE.MeshBasicMaterial({ color: col("--land") }));
-  lm.position.z = Z; layer("land").add(lm);
-  const im = new THREE.Mesh(new THREE.ShapeGeometry(shapesFrom(ice)), new THREE.MeshBasicMaterial({ color: col("--ice") }));
-  im.position.z = Z + 0.001; layer("land").add(im);
-  const coast = new THREE.LineBasicMaterial({ color: col("--coast") });
-  for (const rings of land) for (const r of rings) {
-    const g = new THREE.BufferGeometry().setFromPoints(r.map(p => new THREE.Vector3(p[0], p[1], Z + 0.002)));
-    layer("land").add(new THREE.Line(g, coast));
   }
 }
 
@@ -260,28 +221,15 @@ function buildArrows(arrows) {
   }
 }
 
-function buildPlumes(plumes, wisps) {
+function buildPlumes(plumes) {
   const grp = layer("plumes");
   const mat = new THREE.MeshBasicMaterial({ color: col("--plume"), transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide });
-  const purple = col("--plume"), paper = col("--paper"), c = new THREE.Color();
   for (const p of plumes) {
     const h = -p.zb / 1000;
     const g = new THREE.CylinderGeometry(p.r, p.r * 0.85, h, 48, 1, false);
     const m = new THREE.Mesh(g, mat);
     m.rotation.x = Math.PI / 2; m.position.set(p.x, p.y, -h / 2);
     grp.add(m);
-    // heat-loss wisps: wavy lines rising above the surface, fading towards the page (Fig. 1.1 depth panel)
-    for (let i = 0; i < wisps.n; i++) {
-      const off = (i - (wisps.n - 1) / 2) * wisps.spread * p.r;
-      const pts = [], cols = [];
-      for (let k = 0; k <= 30; k++) {
-        const u = k / 30;
-        const x = p.x + off + Math.sin(u * 2 * Math.PI * 1.25 + i * 1.3) * wisps.amp * p.r * (0.4 + 0.6 * u);
-        pts.push(x, p.y, (wisps.height / 1000) * u * (0.8 + 0.2 * (i % 2)));
-        c.copy(purple).lerp(paper, 0.8 * u); cols.push(c.r, c.g, c.b);
-      }
-      grp.add(fatLine(pts, cols, (wisps.lw[0] + wisps.lw[1]) / 2));
-    }
   }
 }
 
@@ -395,7 +343,6 @@ collapseBtn.addEventListener("click", () => {
 });
 document.querySelectorAll("[data-layer]").forEach(cb => cb.addEventListener("change", () => {
   const g = layers[cb.dataset.layer]; if (g) g.visible = cb.checked;
-  if (cb.dataset.layer === "water" && layers.faceWater) layers.faceWater.visible = cb.checked;
 }));
 document.getElementById("save").addEventListener("click", () => {
   renderer.render(scene, camera);

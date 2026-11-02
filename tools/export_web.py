@@ -66,6 +66,8 @@ def main():
                 if p["Notes"] == "Red":
                     zz = np.zeros(len(piece))
                 elif p["Notes"] == "Blue":
+                    if p["id"] in B.DEEP_SNAP["ids"]:
+                        piece = B.offshore(piece, fl)   # same offshore nudge as the static render
                     zz = B.smooth_z(np.maximum(-2000.0, fl(piece[:, 0], piece[:, 1]) + B.CLEAR))
                 else:   # the sinking ribbon: surface → deep along its length, with the descent fraction s for the colour
                     z_deep = B.smooth_z(np.maximum(-2000.0, fl(piece[:, 0], piece[:, 1]) + B.CLEAR))
@@ -87,7 +89,6 @@ def main():
                 out["osnap"]["moorings"].append([round(float(mx), 1), round(float(my), 1), round(zf + 40.0)])
     print(len(out["osnap"]["moorings"]), "moorings")
 
-    out["wisps"] = dict(B.WISPS)
     out["labels"] = []
     for llon, llat, text, kind in B.LABELS:
         lx, ly = B.ll_to_block(np.array([llon]), np.array([llat]))
