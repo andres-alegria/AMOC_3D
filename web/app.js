@@ -22,6 +22,8 @@ const HEAD = { len: 5.0, half: 3.2 };        // arrowhead size in km per px of l
 const LIGHT_DIR = new THREE.Vector3(-1, 1, 1.4);   // light from the north-west, above
 const DEFAULT = { az: 180, el: 41, exag: 85 };
 
+// data files live next to this script (web/data/), wherever the page itself is served from
+const D = name => new URL("data/" + name, import.meta.url);
 const stage = document.getElementById("stage");
 const status = document.getElementById("status");
 const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -58,11 +60,11 @@ function layer(name) { if (!layers[name]) { layers[name] = new THREE.Group(); wo
 // --------------------------------------------------------------------------------------
 async function load() {
   const [meta, floorBuf, lines, land, ice] = await Promise.all([
-    fetch("data/meta.json").then(r => r.json()),
-    fetch("data/floor.f32").then(r => r.arrayBuffer()),
-    fetch("data/lines.json").then(r => r.json()),
-    fetch("data/land.json").then(r => r.json()),
-    fetch("data/ice.json").then(r => r.json()),
+    fetch(D("meta.json")).then(r => r.json()),
+    fetch(D("floor.f32")).then(r => r.arrayBuffer()),
+    fetch(D("lines.json")).then(r => r.json()),
+    fetch(D("land.json")).then(r => r.json()),
+    fetch(D("ice.json")).then(r => r.json()),
   ]);
   const floor = new Float32Array(floorBuf);
   buildFloor(meta, floor);
