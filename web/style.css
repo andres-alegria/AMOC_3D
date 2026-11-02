@@ -60,5 +60,6 @@ button:hover { border-color: var(--ink-soft); }
 .check input { accent-color: var(--accent); margin: 0; }
 .sw { display: inline-block; width: 14px; height: 5px; border-radius: 2px; }
 .hint { color: var(--ink-soft); font-size: 11px; margin: 6px 0 0; line-height: 1.4; }
+.hint-top { margin: -8px 0 12px; }   /* the interaction hint sits right under the subtitle */
 code { font-size: 11px; }
 @media (max-width: 600px) { #panel { width: calc(100% - 32px); max-height: 45%; } }

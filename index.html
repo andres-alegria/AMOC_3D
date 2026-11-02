@@ -6,7 +6,7 @@
 <title>AMOC deep-water formation — 3D block</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="web/style.css?v=22">
+<link rel="stylesheet" href="web/style.css?v=23">
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
@@ -24,6 +24,7 @@
     <button id="collapse" aria-expanded="true" aria-controls="panel" title="Collapse panel"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
   <p class="sub">GEBCO 2024 seafloor · VIKING20X 10-year mean currents (2013–2023)</p>
+  <p class="hint hint-top">Drag to orbit · scroll to zoom · right-drag to pan.</p>
 
   <section>
     <label class="row"><span>Vertical exaggeration</span><output id="exagOut">85×</output></label>
@@ -56,10 +57,9 @@
     <button id="save">Save PNG</button>
     <button id="reset">Reset view</button>
   </section>
-  <p class="hint">Drag to orbit · scroll to zoom · right-drag to pan.</p>
   <p id="status" class="hint">loading…</p>
 </aside>
 
-<script type="module" src="web/app.js?v=22"></script>
+<script type="module" src="web/app.js?v=23"></script>
 </body>
 </html>
