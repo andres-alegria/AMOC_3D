@@ -23,7 +23,7 @@ const LIGHT_DIR = new THREE.Vector3(-1, 1, 1.4);   // light from the north-west,
 const DEFAULT = { az: 180, el: 41, exag: 85 };
 
 // data files live next to this script (web/data/), wherever the page itself is served from
-const DATA_V = "17";   // bump after re-running export_web.py so browsers drop their cached data files
+const DATA_V = "18";   // bump after re-running export_web.py so browsers drop their cached data files
 const D = name => new URL("data/" + name + "?v=" + DATA_V, import.meta.url);
 const stage = document.getElementById("stage");
 const status = document.getElementById("status");
@@ -222,9 +222,11 @@ function buildArrows(arrows) {
       grp.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })));
     };
     if (a.type === "Current" && a.head !== false) addHead(a.p[a.p.length - 2], a.p[a.p.length - 1]);
-    if (a.type === "Current" && a.head_start) {        // inflow stub: a head at the tip pointing into the box
+    if (a.type === "Current" && a.head_start) {        // inflow stub: a head outside the tip, its point just touching the ribbon
       const [x0, y0, z0] = a.p[0], [x1, y1] = a.p[1];
-      addHead([2 * x0 - x1, 2 * y0 - y1, z0], a.p[0]);
+      const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, len = HEAD.len * wpx;
+      const at = [x0 - ux * len * 0.7, y0 - uy * len * 0.7, z0];   // addHead puts the point 0.7·len ahead of `at`
+      addHead([at[0] - ux, at[1] - uy, z0], at);
     }
   }
 }
