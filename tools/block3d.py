@@ -714,6 +714,9 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
                         qq, cc, dd = ribbon_quads_z(piece, zz, wpx, colr)
                         if p["Type"] == "Current":
                             qq.append(arrowhead(piece, zz[-1], wpx)); cc.append(colr); dd.append(dd[-1] + 0.01)
+                        if at_face and inbound and p["Type"] == "Current":
+                            # a head at the stub tip too, pointing along the flow into the box: "this comes in"
+                            qq.append(arrowhead(np.array([2 * piece[0] - piece[1], piece[0]]), 0.0, wpx)); cc.append(colr); dd.append(dd[0] - 0.01)
                         surface_items.append((qq, cc, dd))
                     else:
                         zz = smooth_z(zz)

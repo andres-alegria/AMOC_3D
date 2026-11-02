@@ -82,8 +82,8 @@ def main():
                 piece = B.smooth(B.densify(piece))
                 rec = dict(id=p["id"], cls=cls_of[p["Notes"]], type=p["Type"], w=int(p["Thickness"]))
                 if p["Notes"] == "Red":
-                    if at_face and inbound:             # inflow: stub + inside path as one ribbon
-                        piece = np.vstack([stub[:-1], piece])
+                    if at_face and inbound:             # inflow: stub + inside path as one ribbon, with a head at the tip too
+                        piece = np.vstack([stub[:-1], piece]); rec["head_start"] = True
                         out["front"].append(dict(cls="surface", x=round(float(stub[0, 0]), 1), y=round(float(stub[0, 1]), 1), z=0.0, text=B.FRONT_LABELS["Red"],
                                                  side=B.FRONT_LABEL_SIDE.get("Red", -1 if stub[1, 0] > stub[0, 0] else 1)))
                     zz = np.zeros(len(piece))

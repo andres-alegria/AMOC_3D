@@ -23,7 +23,7 @@ const LIGHT_DIR = new THREE.Vector3(-1, 1, 1.4);   // light from the north-west,
 const DEFAULT = { az: 180, el: 41, exag: 85 };
 
 // data files live next to this script (web/data/), wherever the page itself is served from
-const DATA_V = "16";   // bump after re-running export_web.py so browsers drop their cached data files
+const DATA_V = "17";   // bump after re-running export_web.py so browsers drop their cached data files
 const D = name => new URL("data/" + name + "?v=" + DATA_V, import.meta.url);
 const stage = document.getElementById("stage");
 const status = document.getElementById("status");
@@ -211,14 +211,20 @@ function buildArrows(arrows) {
     const l = fatLine(pts, a.cls === "conv" ? cols : null, wpx);
     if (a.cls !== "conv") { l.material.color = color; l.material.vertexColors = false; l.material.needsUpdate = true; }
     grp.add(l);
-    if (a.type === "Current" && a.head !== false) {
-      const n = a.p.length, [x1, y1, z1] = a.p[n - 1], [x0, y0] = a.p[n - 2];
+    // arrowhead at point `at`, pointing from `from` towards `at`
+    const addHead = (from, at) => {
+      const [x1, y1, z1] = at, [x0, y0] = from;
       const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
       const len = HEAD.len * wpx, half = HEAD.half * wpx, z = z1 / 1000 + (a.cls === "surface" ? 0.006 : 0);
       const tip = [x1 + ux * len * 0.7, y1 + uy * len * 0.7], base = [x1 - ux * len * 0.3, y1 - uy * len * 0.3];
       const tri = new Float32Array([tip[0], tip[1], z, base[0] - uy * half, base[1] + ux * half, z, base[0] + uy * half, base[1] - ux * half, z]);
       const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(tri, 3));
       grp.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })));
+    };
+    if (a.type === "Current" && a.head !== false) addHead(a.p[a.p.length - 2], a.p[a.p.length - 1]);
+    if (a.type === "Current" && a.head_start) {        // inflow stub: a head at the tip pointing into the box
+      const [x0, y0, z0] = a.p[0], [x1, y1] = a.p[1];
+      addHead([2 * x0 - x1, 2 * y0 - y1, z0], a.p[0]);
     }
   }
 }
