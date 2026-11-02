@@ -1,0 +1,8 @@
+# project notes stay local
+README.md
+# Finder litter
+.DS_Store
+**/.DS_Store
+# Python
+__pycache__/
+*.pyc

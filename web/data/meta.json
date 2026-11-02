@@ -1,0 +1,12 @@
+{
+ "nx": 760,
+ "ny": 520,
+ "x0": -1900.0,
+ "y0": -1350.0,
+ "x1": 1900.0,
+ "y1": 1250.0,
+ "cell": 5.0,
+ "zbase": -5600.0,
+ "proj": "+proj=laea +lat_0=60 +lon_0=-32.5 +datum=WGS84 +units=m",
+ "source": "GEBCO 2024 sub-ice, 5 km average; land clamped to 0"
+}

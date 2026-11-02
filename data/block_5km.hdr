@@ -1,0 +1,19 @@
+ENVI
+description = {
+block_5km.bil}
+samples = 760
+lines   = 520
+bands   = 1
+header offset = 0
+file type = ENVI Standard
+data type = 4
+interleave = bsq
+byte order = 0
+map info = {Lambert Azimuthal Equal Area, 1, 1, -1900000, 1250000, 5000, 5000,WGS-84}
+projection info = {11, 6378137, 6356752.314245179, 60, -32.5, 0, 0,WGS-84, Lambert Azimuthal Equal Area}
+coordinate system string = {PROJCS["unknown",GEOGCS["GCS_unknown",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Lambert_Azimuthal_Equal_Area"],PARAMETER["False_Easting",0.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",-32.5],PARAMETER["Latitude_Of_Origin",60.0],UNIT["Meter",1.0]]}
+band names = {
+Band 1}
+data ignore value = -32767
+data offset values = {0}
+data gain values = {1}

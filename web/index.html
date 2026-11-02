@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AMOC deep-water formation — 3D block</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=3">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="stage"></div>
+<div id="labels"></div>
+
+<aside id="panel">
+  <div class="head">
+    <h1>Deep-water formation in the subpolar North Atlantic</h1>
+    <button id="collapse" aria-expanded="true" aria-controls="panel" title="Collapse panel"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  </div>
+  <p class="sub">GEBCO 2024 seafloor · VIKING20X 10-year mean currents (2013–2023)</p>
+
+  <section>
+    <label class="row"><span>Vertical exaggeration</span><output id="exagOut">85×</output></label>
+    <input type="range" id="exag" min="5" max="250" step="1" value="85">
+  </section>
+
+  <section>
+    <div class="row"><span>Camera</span><span id="camOut" class="mono"></span></div>
+    <div class="btns">
+      <button data-cam="180,41">South</button>
+      <button data-cam="225,34">South-west</button>
+      <button data-cam="135,34">South-east</button>
+      <button data-cam="180,89">Top</button>
+    </div>
+  </section>
+
+  <section id="layers">
+    <div class="row"><span>Layers</span></div>
+    <label class="check"><input type="checkbox" data-layer="surface" checked> <i class="sw" style="background:var(--surf)"></i> Surface currents, 0–500 m</label>
+    <label class="check"><input type="checkbox" data-layer="intermediate"> <i class="sw" style="background:var(--mid)"></i> Intermediate, 500–1,200 m</label>
+    <label class="check"><input type="checkbox" data-layer="deep" checked> <i class="sw" style="background:var(--deep)"></i> Deep currents, 1,500–2,500 m</label>
+    <label class="check"><input type="checkbox" data-layer="arrows" checked> <i class="sw" style="background:linear-gradient(90deg,var(--arrowSurf),var(--plume),var(--arrowDeep))"></i> Schematic AMOC flows, sinking in purple</label>
+    <label class="check"><input type="checkbox" data-layer="plumes" checked> <i class="sw" style="background:var(--plume);opacity:.5"></i> Deep-water formation sites</label>
+    <label class="check"><input type="checkbox" data-layer="osnap" checked> <i class="sw sw-dash"></i> OSNAP observing array</label>
+    <label class="check"><input type="checkbox" data-layer="labels" checked> Labels</label>
+    <label class="check"><input type="checkbox" data-layer="water" checked> Sea surface</label>
+    <label class="check"><input type="checkbox" data-layer="land" checked> Land</label>
+    <label class="check"><input type="checkbox" data-layer="depthScale" checked> Depth scale</label>
+  </section>
+
+  <section class="btns">
+    <button id="save">Save PNG</button>
+    <button id="reset">Reset view</button>
+  </section>
+  <p class="hint">Drag to orbit · scroll to zoom · right-drag to pan.</p>
+  <p id="status" class="hint">loading…</p>
+</aside>
+
+<script type="module" src="app.js?v=3"></script>
+</body>
+</html>
