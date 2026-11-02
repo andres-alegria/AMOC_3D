@@ -23,7 +23,7 @@ const LIGHT_DIR = new THREE.Vector3(-1, 1, 1.4);   // light from the north-west,
 const DEFAULT = { az: 180, el: 41, exag: 85 };
 
 // data files live next to this script (web/data/), wherever the page itself is served from
-const DATA_V = "21";   // bump after re-running export_web.py so browsers drop their cached data files
+const DATA_V = "22";   // bump after re-running export_web.py so browsers drop their cached data files
 const D = name => new URL("data/" + name + "?v=" + DATA_V, import.meta.url);
 const stage = document.getElementById("stage");
 const status = document.getElementById("status");
@@ -385,13 +385,44 @@ collapseBtn.addEventListener("click", () => {
 document.querySelectorAll("[data-layer]").forEach(cb => cb.addEventListener("change", () => {
   const g = layers[cb.dataset.layer]; if (g) g.visible = cb.checked;
 }));
+// Save PNG: the WebGL canvas plus the HTML labels (CSS2DRenderer draws them as DOM elements, which
+// toDataURL never sees), composed on an offscreen canvas at the renderer's pixel ratio
+function exportPNG() {
+  renderer.render(scene, camera); labelRenderer.render(scene, camera);
+  const src = renderer.domElement, scale = src.width / src.clientWidth;
+  const out = document.createElement("canvas"); out.width = src.width; out.height = src.height;
+  const ctx = out.getContext("2d");
+  ctx.drawImage(src, 0, 0);
+  const stage = src.getBoundingClientRect();
+  for (const el of document.querySelectorAll("#labels > div")) {
+    const cs = getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || el.offsetParent === null && cs.position !== "absolute") continue;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.right < stage.left || r.left > stage.right || r.bottom < stage.top || r.top > stage.bottom) continue;
+    const lines = (el.innerText || el.textContent).split("\n").filter(t => t.length);
+    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.15;
+    ctx.save(); ctx.scale(scale, scale);
+    ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    ctx.textBaseline = "middle"; ctx.textAlign = "center";
+    const cx = r.left - stage.left + r.width / 2, y0 = r.top - stage.top + (r.height - lh * (lines.length - 1)) / 2;
+    const bg = cs.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)";
+    if (bg) { ctx.fillStyle = cs.backgroundColor; ctx.fillRect(r.left - stage.left, r.top - stage.top, r.width, r.height); }
+    lines.forEach((t, i) => {
+      const y = y0 + i * lh;
+      if (!bg) { ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.strokeStyle = tok("--paper"); ctx.strokeText(t, cx, y); }   // the halo
+      ctx.fillStyle = cs.color; ctx.fillText(t, cx, y);
+    });
+    ctx.restore();
+  }
+  return out.toDataURL("image/png");
+}
 document.getElementById("save").addEventListener("click", () => {
-  renderer.render(scene, camera);
   const { az, el } = camAngles();
   const a = document.createElement("a");
   a.download = `amoc3d_az${az.toFixed(0)}_el${el.toFixed(0)}_x${world.scale.z}.png`;
-  a.href = renderer.domElement.toDataURL("image/png"); a.click();
+  a.href = exportPNG(); a.click();
 });
+window.amoc3d.exportPNG = exportPNG;
 addEventListener("resize", () => {
   persp.aspect = innerWidth / innerHeight; persp.updateProjectionMatrix();
   if (camera === ortho) { const h = ortho.top, a = innerWidth / innerHeight; ortho.left = -h * a; ortho.right = h * a; ortho.updateProjectionMatrix(); }
