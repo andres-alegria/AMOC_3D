@@ -59,6 +59,7 @@ def main():
 
     g = json.load(open(B.ARROWS))
     cls_of = dict(Red="surface", Blue="deep", Convection="conv")
+    in_to_y = B.outflow_tip_y(g["features"]) if B.FRONT_STUB["match_outflow"] else None
     for f in g["features"]:
         p = f["properties"]
         if p["Notes"] not in cls_of:
@@ -67,7 +68,7 @@ def main():
             c = np.array(part)
             bx, by = B.ll_to_block(c[:, 0], c[:, 1])
             P = np.column_stack([bx, by]); stub, inbound = None, False
-            fs = B.front_split(B.densify(P)) if p["Notes"] in ("Red", "Blue") else None
+            fs = B.front_split(B.densify(P), to_y=in_to_y if p["Notes"] == "Red" else None) if p["Notes"] in ("Red", "Blue") else None
             if fs is not None:
                 P, stub, inbound = fs
             pieces = B.clip_to_block(P)

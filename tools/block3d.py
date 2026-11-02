@@ -97,7 +97,7 @@ DRAW_LAND = False               # Natural Earth land/ice plates on the surface (
 DRAW_WATER = False              # translucent sea surface + water column on the cut faces (off since 2 Nov)
 # the inflow / outflow arrows that cross the front (south) face protrude from the box by `length` km, so the
 # reader sees what enters and leaves the subpolar basin; `leader` px is the label tick from the stub tip
-FRONT_STUB = dict(length=520.0, leader=22, drop=14)   # leader px sideways and px down from the stub tip to the label
+FRONT_STUB = dict(length=520.0, leader=22, drop=14, match_outflow=True)   # leader px sideways/down from the tip to the label; match_outflow: the inflow stub reaches as far south as the outflow tip
 SURF_SEED = -250.0              # m: VIKING surface ribbons are seeded only over floor deeper than this (they sit at BANDS z)
 FRONT_LABELS = dict(Red="Warm surface flow", Blue="Cold deep return flow")   # labels pointing at the stubs
 # deep (Blue) arrows: Fig. 1.1 drew them on a flat map, running over the shelves. In 3D a boundary current
@@ -117,7 +117,7 @@ LABELS = [
     (-44.5, 70.5, "Greenland", "land"), (-18.5, 64.9, "Iceland", "land"), (-62.0, 54.5, "Labrador", "land"),
     (-3.5, 56.5, "Scotland", "land"), (9.0, 62.0, "Norway", "land"), (-55.5, 60.0, "Labrador\nSea", "sea"),
     (-36.5, 62.5, "Irminger\nSea", "sea"), (-24.0, 60.0, "Iceland Basin", "sea"), (-6.0, 69.0, "Nordic Seas", "sea"),
-    (-26.5, 68.0, "Denmark Strait", "feature"), (-8.5, 62.6, "Faroe Bank\nChannel", "feature"), (-28.5, 56.0, "Reykjanes Ridge", "feature"),
+    (-26.5, 68.0, "Denmark Strait", "feature"), (-8.5, 62.6, "Faroe Bank\nChannel", "feature"),
     (-45.5, 57.0, "deep-water\nconversion", "flow"),
     (-52.5, 51.5, "OSNAP West", "obs"), (-14.5, 56.6, "OSNAP East", "obs"),
 ]
@@ -439,11 +439,12 @@ def south_crossing(P):
     return None
 
 
-def front_split(P):
+def front_split(P, to_y=None):
     """Split a (densified) path at the front face. Returns (inside part ending/starting exactly on the face,
-    stub of FRONT_STUB['length'] km outside the face ordered in the flow direction, inbound flag), or None
-    when the path does not cross the face. The stub follows the drawn path while it lasts and continues
-    straight beyond its end."""
+    stub outside the face ordered in the flow direction, inbound flag), or None when the path does not cross
+    the face. The stub is FRONT_STUB['length'] km long, or longer when `to_y` is given: it then also continues
+    until it reaches that y (the inflow stub is taken as far south as the outflow tip). It follows the drawn
+    path while it lasts and continues straight beyond its end (due south if the path was not heading south)."""
     hit = south_crossing(P)
     if hit is None:
         return None
@@ -451,17 +452,47 @@ def front_split(P):
     inbound = P[i + 1][1] > Y0
     outside = P[:i + 1][::-1] if inbound else P[i + 1:]
     inside = np.vstack([X, P[i + 1:]]) if inbound else np.vstack([P[:i + 1], X])
+    done = lambda L, pt: L >= FRONT_STUB["length"] and (to_y is None or pt[1] <= to_y)
     stub, L, prev = [X], 0.0, X
     for q in outside:
         d = np.hypot(*(q - prev))
-        if L + d >= FRONT_STUB["length"]:
-            stub.append(prev + (q - prev) * (FRONT_STUB["length"] - L) / d); L = FRONT_STUB["length"]; break
+        if done(L, prev):
+            break
+        if L + d >= FRONT_STUB["length"] and (to_y is None or q[1] <= to_y):
+            # finish inside this segment at whichever comes later: the length or the target y
+            t_len = (FRONT_STUB["length"] - L) / d
+            t_y = 1.0 if to_y is None or q[1] == prev[1] else np.clip((to_y - prev[1]) / (q[1] - prev[1]), 0, 1)
+            t = max(t_len, t_y) if to_y is not None and prev[1] > to_y else t_len
+            pt = prev + (q - prev) * t; stub.append(pt); L += d * t; prev = pt
+            if done(L, pt):
+                break
+            continue
         stub.append(q); L += d; prev = q
-    if L < FRONT_STUB["length"]:
-        u = stub[-1] - stub[-2] if len(stub) > 1 else np.array([0.0, -1.0]); u = u / np.hypot(*u)
-        stub.append(stub[-1] + u * (FRONT_STUB["length"] - L))
+    if not done(L, stub[-1]):
+        u = stub[-1] - stub[-2] if len(stub) > 1 else np.array([0.0, -1.0]); u = u / max(np.hypot(*u), 1e-9)
+        if to_y is not None and stub[-1][1] > to_y and u[1] >= -0.2:
+            u = np.array([0.0, -1.0])                       # the drawn path does not head south: go straight south
+        ext = max(FRONT_STUB["length"] - L, 0.0)
+        if to_y is not None and stub[-1][1] > to_y and u[1] < 0:
+            ext = max(ext, (stub[-1][1] - to_y) / -u[1])
+        stub.append(stub[-1] + u * ext)
     stub = np.array(stub)
     return inside, (stub[::-1] if inbound else stub), inbound
+
+
+def outflow_tip_y(features):
+    """y (km) of the southernmost outflow stub tip among the deep arrows, or None: the inflow stub is
+    extended to this latitude so the two protrusions reach equally far (FRONT_STUB['match_outflow'])."""
+    best = None
+    for f in features:
+        if f["properties"]["Notes"] != "Blue":
+            continue
+        for part in f["geometry"]["coordinates"]:
+            c = np.array(part); bx, by = ll_to_block(c[:, 0], c[:, 1])
+            fs = front_split(densify(np.column_stack([bx, by])))
+            if fs is not None and not fs[2]:
+                y = float(fs[1][-1, 1]); best = y if best is None else min(best, y)
+    return best
 
 
 def densify(pts, step=15.0):
@@ -591,6 +622,7 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
 
     if arrows:
         g = json.load(open(ARROWS))
+        in_to_y = outflow_tip_y(g["features"]) if FRONT_STUB["match_outflow"] else None
         for f in g["features"]:
             p = f["properties"]
             if p["Notes"] not in ("Red", "Blue", "Convection"):
@@ -600,7 +632,7 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
                 bx, by = ll_to_block(c[:, 0], c[:, 1])
                 P = np.column_stack([bx, by])
                 stub, inbound = None, False
-                fs = front_split(densify(P)) if p["Notes"] in ("Red", "Blue") else None
+                fs = front_split(densify(P), to_y=in_to_y if p["Notes"] == "Red" else None) if p["Notes"] in ("Red", "Blue") else None
                 if fs is not None:
                     P, stub, inbound = fs
                 pieces = clip_to_block(P)
