@@ -60,6 +60,7 @@ def main():
     g = json.load(open(B.ARROWS))
     cls_of = dict(Red="surface", Blue="deep", Convection="conv")
     in_to_y = B.outflow_tip_y(g["features"]) if B.FRONT_STUB["match_outflow"] else None
+    jrecs = []                                   # pass 1: geometry, in the shape block3d.join_arrows expects
     for f in g["features"]:
         p = f["properties"]
         if p["Notes"] not in cls_of:
@@ -80,7 +81,9 @@ def main():
             for ip, piece in enumerate(pieces):
                 at_face = stub is not None and ((inbound and ip == 0) or (not inbound and ip == len(pieces) - 1))
                 piece = B.smooth(B.densify(piece))
-                rec = dict(id=p["id"], cls=cls_of[p["Notes"]], type=p["Type"], w=int(p["Thickness"]))
+                wpx = 3.0 if p["Type"] == "Eddy" else B.ARROW_W[int(p["Thickness"])]
+                rec = dict(id=p["id"], notes=p["Notes"], type=p["Type"], w=wpx, at_face=at_face, inbound=inbound,
+                           stub=stub, head=p["Type"] == "Current", s=None, head_start=False)
                 if p["Notes"] == "Red":
                     if at_face and inbound:             # inflow: stub + inside path as one ribbon, with a head at the tip too
                         piece = np.vstack([stub[:-1], piece]); rec["head_start"] = True
@@ -91,19 +94,33 @@ def main():
                     if p["id"] in B.DEEP_SNAP["ids"]:
                         piece = B.offshore(piece, fl)   # same offshore nudge as the static render
                     zz = B.smooth_z(np.maximum(-2000.0, fl(piece[:, 0], piece[:, 1]) + B.CLEAR))
-                    if at_face and not inbound:         # outflow: head on a separate stub record at the face depth
-                        rec["head"] = False
-                        zs = float(zz[-1])
-                        out["arrows"].append(dict(id=p["id"], cls="deep", type=p["Type"], w=int(p["Thickness"]), head=True,
-                                                  p=np.round(np.column_stack([stub, np.full(len(stub), zs)]), 1).tolist()))
-                        out["front"].append(dict(cls="deep", x=round(float(stub[-1, 0]), 1), y=round(float(stub[-1, 1]), 1), z=round(zs), text=B.FRONT_LABELS["Blue"],
-                                                 side=B.FRONT_LABEL_SIDE.get("Blue", -1 if stub[-2, 0] > stub[-1, 0] else 1)))
                 else:   # the sinking ribbon: surface → deep along its length, with the descent fraction s for the colour
                     z_deep = B.smooth_z(np.maximum(-2000.0, fl(piece[:, 0], piece[:, 1]) + B.CLEAR))
-                    s, zz = B.conv_profile(piece, z_deep)
-                    rec["s"] = np.round(s, 3).tolist()
-                rec["p"] = np.round(np.column_stack([piece, zz]), 1).tolist()
-                out["arrows"].append(rec)
+                    rec["s"], zz = B.conv_profile(piece, z_deep)
+                rec["piece"], rec["zz"] = piece, zz
+                jrecs.append(rec)
+
+    B.join_arrows(jrecs)                          # pass 2: taper widths at joints, drop the heads there
+
+    for r in jrecs:                               # pass 3: emit
+        rec = dict(id=r["id"], cls=cls_of[r["notes"]], type=r["type"], wpx=r["w"],
+                   p=np.round(np.column_stack([r["piece"], r["zz"]]), 1).tolist())
+        if (r["wv"] != r["w"]).any():
+            rec["wv"] = np.round(r["wv"], 1).tolist()
+        if r["s"] is not None:
+            rec["s"] = np.round(r["s"], 3).tolist()
+        if r["head_start"]:
+            rec["head_start"] = True
+        exits = r["notes"] == "Blue" and r["at_face"] and not r["inbound"]
+        if not r["head"] or exits:
+            rec["head"] = False
+        out["arrows"].append(rec)
+        if exits:                                  # outflow: head on a separate stub record at the face depth
+            stub, zs = r["stub"], float(r["zz"][-1])
+            out["arrows"].append(dict(id=r["id"], cls="deep", type=r["type"], wpx=float(r["wv"][-1]), head=True,
+                                      p=np.round(np.column_stack([stub, np.full(len(stub), zs)]), 1).tolist()))
+            out["front"].append(dict(cls="deep", x=round(float(stub[-1, 0]), 1), y=round(float(stub[-1, 1]), 1), z=round(zs), text=B.FRONT_LABELS["Blue"],
+                                     side=B.FRONT_LABEL_SIDE.get("Blue", -1 if stub[-2, 0] > stub[-1, 0] else 1)))
     print(len(out["arrows"]), "arrow pieces")
 
     # the OSNAP section: surface line pieces + mooring posts (x, y, floor m)

@@ -23,7 +23,7 @@ const LIGHT_DIR = new THREE.Vector3(-1, 1, 1.4);   // light from the north-west,
 const DEFAULT = { az: 180, el: 41, exag: 85 };
 
 // data files live next to this script (web/data/), wherever the page itself is served from
-const DATA_V = "19";   // bump after re-running export_web.py so browsers drop their cached data files
+const DATA_V = "21";   // bump after re-running export_web.py so browsers drop their cached data files
 const D = name => new URL("data/" + name + "?v=" + DATA_V, import.meta.url);
 const stage = document.getElementById("stage");
 const status = document.getElementById("status");
@@ -202,17 +202,33 @@ function buildArrows(arrows) {
   const tmp = new THREE.Color();
   for (const a of arrows) {
     const color = col(a.cls === "surface" ? "--arrowSurf" : "--arrowDeep");
-    const wpx = a.type === "Eddy" ? 3 : ARROW_W[a.w];
-    const pts = [], cols = [];
-    a.p.forEach(([x, y, z], i) => {
-      pts.push(x, y, z / 1000 + (a.cls === "surface" ? 0.005 : 0));
-      if (a.cls === "conv") { convColor(a.s[i], tmp); cols.push(tmp.r, tmp.g, tmp.b); }
-    });
-    const l = fatLine(pts, a.cls === "conv" ? cols : null, wpx);
-    if (a.cls !== "conv") { l.material.color = color; l.material.vertexColors = false; l.material.needsUpdate = true; }
-    grp.add(l);
-    // arrowhead at point `at`, pointing from `from` towards `at`
-    const addHead = (from, at) => {
+    const wbase = a.type === "Eddy" ? 3 : (a.wpx ?? ARROW_W[a.w]);
+    const zlift = a.cls === "surface" ? 0.005 : 0;
+    // Line2 has one width per line, so a tapered arrow (a.wv, px per vertex) is drawn as chunks of
+    // constant quantised width that share one vertex with their neighbour; round caps hide the joints
+    const chunks = [];
+    if (!a.wv) chunks.push([0, a.p.length - 1, wbase]);
+    else {
+      const q = a.wv.map(w => Math.round(w * 2) / 2);
+      let s = 0;
+      for (let i = 1; i <= q.length; i++) {
+        if (i === q.length || q[i] !== q[s]) { chunks.push([s, Math.min(i, q.length - 1), q[s]]); s = i; }
+      }
+    }
+    for (const [i0, i1, w] of chunks) {
+      if (i1 <= i0) continue;
+      const pts = [], cols = [];
+      for (let i = i0; i <= i1; i++) {
+        const [x, y, z] = a.p[i];
+        pts.push(x, y, z / 1000 + zlift);
+        if (a.cls === "conv") { convColor(a.s[i], tmp); cols.push(tmp.r, tmp.g, tmp.b); }
+      }
+      const l = fatLine(pts, a.cls === "conv" ? cols : null, w);
+      if (a.cls !== "conv") { l.material.color = color; l.material.vertexColors = false; l.material.needsUpdate = true; }
+      grp.add(l);
+    }
+    // arrowhead at point `at`, pointing from `from` towards `at`, sized for width wpx
+    const addHead = (from, at, wpx) => {
       const [x1, y1, z1] = at, [x0, y0] = from;
       const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
       const len = HEAD.len * wpx, half = HEAD.half * wpx, z = z1 / 1000 + (a.cls === "surface" ? 0.006 : 0);
@@ -221,13 +237,14 @@ function buildArrows(arrows) {
       const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(tri, 3));
       grp.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })));
     };
-    if (a.type === "Current" && a.head !== false) addHead(a.p[a.p.length - 2], a.p[a.p.length - 1]);
-    if (a.type === "Current" && a.head_start) {        // inflow stub: a head outside the tip, its point just touching the ribbon
+    const wEnd = a.wv ? a.wv[a.wv.length - 1] : wbase, wStart = a.wv ? a.wv[0] : wbase;
+    if (a.type === "Current" && a.head !== false) addHead(a.p[a.p.length - 2], a.p[a.p.length - 1], wEnd);
+    if (a.type === "Current" && a.head_start) {        // inflow stub: a head outside the tip, its point just short of the ribbon
       const [x0, y0, z0] = a.p[0], [x1, y1] = a.p[1];
-      const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, len = HEAD.len * wpx;
-      const back = len * 0.7 + HEAD.gap * wpx;                    // addHead puts the point 0.7·len ahead of `at`; plus the gap
+      const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, len = HEAD.len * wStart;
+      const back = len * 0.7 + HEAD.gap * wStart;
       const at = [x0 - ux * back, y0 - uy * back, z0];
-      addHead([at[0] - ux, at[1] - uy, z0], at);
+      addHead([at[0] - ux, at[1] - uy, z0], at, wStart);
     }
   }
 }

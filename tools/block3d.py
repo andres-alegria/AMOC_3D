@@ -107,6 +107,10 @@ DRAW_WATER = False              # translucent sea surface + water column on the 
 FRONT_STUB = dict(length=520.0, leader=22, drop=14, match_outflow=True, head_gap=0.6)   # leader px sideways/down from the tip to the label; match_outflow: the inflow stub reaches as far south as the outflow tip; head_gap: space (× line width) between the inflow tip head and the ribbon
 SURF_SEED = -250.0              # m: VIKING surface ribbons are seeded only over floor deeper than this (they sit at BANDS z)
 FRONT_LABELS = dict(Red="Warm surface flow", Blue="Cold deep return flow")   # labels pointing at the stubs
+# where one Fig. 1.1 arrow runs into another of a different thickness class, the width is tapered over the
+# last `taper` km of the arriving arrow to the width of the one it joins, and the head at the joint is dropped
+# (the flow continues). A joint = an arrow end within `dist` km and `dz` m of another arrow's vertex.
+JOIN = dict(dist=45.0, taper=300.0, dz=400.0)
 FRONT_LABEL_SIDE = dict(Red=1)  # force a label side (+1 right, -1 left); classes not listed go to the side away from the ribbon
 # deep (Blue) arrows: Fig. 1.1 drew them on a flat map, running over the shelves. In 3D a boundary current
 # belongs at the slope foot, so each vertex of the arrows listed in `ids` is walked downslope (toward the
@@ -674,6 +678,7 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
     if arrows:
         g = json.load(open(ARROWS))
         in_to_y = outflow_tip_y(g["features"]) if FRONT_STUB["match_outflow"] else None
+        recs = []                                           # pass 1: geometry of every arrow piece
         for f in g["features"]:
             p = f["properties"]
             if p["Notes"] not in ("Red", "Blue", "Convection"):
@@ -695,57 +700,64 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
                 for ip, piece in enumerate(pieces):
                     at_face = stub is not None and ((inbound and ip == 0) or (not inbound and ip == len(pieces) - 1))
                     piece = smooth(densify(piece))
-                    wpx = ARROW_W[int(p["Thickness"])]
-                    if p["Type"] == "Eddy":
-                        wpx = 3.0
+                    wpx = 3.0 if p["Type"] == "Eddy" else ARROW_W[int(p["Thickness"])]
+                    rec = dict(id=p["id"], notes=p["Notes"], type=p["Type"], w=wpx, at_face=at_face, inbound=inbound,
+                               stub=stub, head=p["Type"] == "Current", s=None)
                     if p["Notes"] == "Convection":
                         # the sinking ribbon: starts at the surface in red, descends to the deep level in navy
                         z_deep = smooth_z(np.maximum(-2000.0, floor_at(piece[:, 0], piece[:, 1]) + CLEAR))
-                        s, zz = conv_profile(piece, z_deep)
-                        colr = ramp3(PAL["conv"], s)
-                        k = int(np.argmax(zz < CONV_SPLIT)) if np.any(zz < CONV_SPLIT) else len(zz)
-                        if k >= 2:   # shallow part, above the sea surface
-                            qq, cc, dd = ribbon_quads_z(piece[:k], zz[:k], wpx, colr[:k])
-                            surface_items.append((qq, cc, dd))
-                        if k < len(zz) - 1:
-                            k0 = max(k - 1, 0)
-                            for rp, rz, is_end in visible_runs(hz, piece[k0:], zz[k0:]):
-                                sel = np.isin(piece[k0:, 0], rp[:, 0])
-                                qq, cc, _ = ribbon_quads_z(rp, rz, wpx, colr[k0:][sel])
-                                if is_end:
-                                    qq.append(arrowhead(rp, rz[-1], wpx)); cc.append(hex2rgb(PAL["conv"][2]))
-                                deep_items.append((qq, cc))
-                        continue
-                    if p["Notes"] == "Red":
+                        rec["s"], zz = conv_profile(piece, z_deep)
+                        rec["colr"] = ramp3(PAL["conv"], rec["s"])
+                    elif p["Notes"] == "Red":
                         if at_face and inbound:          # the inflow: stub outside the face + the path inside, one ribbon
                             piece = np.vstack([stub[:-1], piece]); front_tips.append(("Red", stub[0], stub[1], 0.0))
-                        zz = np.zeros(len(piece)); colr = hex2rgb(PAL["arrow_surf"])
+                        zz = np.zeros(len(piece)); rec["colr"] = hex2rgb(PAL["arrow_surf"])
                     else:
                         if p["id"] in DEEP_SNAP["ids"]:
                             piece = offshore(piece, floor_at)    # boundary currents hug the slope foot, not the shelf
-                        zz = np.maximum(-2000.0, floor_at(piece[:, 0], piece[:, 1]) + CLEAR); colr = hex2rgb(PAL["arrow_deep"])
-                    if p["Notes"] == "Red":
-                        qq, cc, dd = ribbon_quads_z(piece, zz, wpx, colr)
-                        if p["Type"] == "Current":
-                            qq.append(arrowhead(piece, zz[-1], wpx)); cc.append(colr); dd.append(dd[-1] + 0.01)
-                        if at_face and inbound and p["Type"] == "Current":
-                            # a head outside the stub tip, its point just touching the ribbon, pointing along the flow into the box
-                            qq.append(arrowhead_touching(piece[0], piece[1], 0.0, wpx, FRONT_STUB["head_gap"])); cc.append(colr); dd.append(dd[0] - 0.01)
-                        surface_items.append((qq, cc, dd))
-                    else:
-                        zz = smooth_z(zz)
-                        exits = at_face and not inbound          # the outflow leaves through the face: head goes on the stub
-                        for rp, rz, is_end in visible_runs(hz, piece, zz):
-                            qq, cc, _ = ribbon_quads_z(rp, rz, wpx, colr)
-                            if p["Type"] == "Current" and is_end and not exits:
-                                qq.append(arrowhead(rp, rz[-1], wpx)); cc.append(colr)
-                            deep_items.append((qq, cc))
-                        if exits:
-                            zs = np.full(len(stub), zz[-1])      # the stub keeps the depth it had at the face
-                            qq, cc, _ = ribbon_quads_z(stub, zs, wpx, colr)
-                            if p["Type"] == "Current":
-                                qq.append(arrowhead(stub, zs[-1], wpx)); cc.append(colr)
-                            front_items.append((qq, cc)); front_tips.append(("Blue", stub[-1], stub[-2], zs[-1]))
+                        zz = smooth_z(np.maximum(-2000.0, floor_at(piece[:, 0], piece[:, 1]) + CLEAR)); rec["colr"] = hex2rgb(PAL["arrow_deep"])
+                    rec["piece"], rec["zz"] = piece, zz
+                    recs.append(rec)
+
+        join_arrows(recs)                                   # pass 2: taper widths where arrows meet, drop heads there
+
+        for rec in recs:                                    # pass 3: draw
+            piece, zz, wv, colr, at_face, inbound, stub = (rec[k] for k in ("piece", "zz", "wv", "colr", "at_face", "inbound", "stub"))
+            if rec["notes"] == "Convection":
+                k = int(np.argmax(zz < CONV_SPLIT)) if np.any(zz < CONV_SPLIT) else len(zz)
+                if k >= 2:   # shallow part, above the sea surface
+                    qq, cc, dd = ribbon_quads_z(piece[:k], zz[:k], wv[:k], colr[:k])
+                    surface_items.append((qq, cc, dd))
+                if k < len(zz) - 1:
+                    k0 = max(k - 1, 0)
+                    for rp, rz, is_end in visible_runs(hz, piece[k0:], zz[k0:]):
+                        sel = np.isin(piece[k0:, 0], rp[:, 0])
+                        qq, cc, _ = ribbon_quads_z(rp, rz, wv[k0:][sel], colr[k0:][sel])
+                        if is_end and rec["head"]:
+                            qq.append(arrowhead(rp, rz[-1], wv[-1])); cc.append(hex2rgb(PAL["conv"][2]))
+                        deep_items.append((qq, cc))
+            elif rec["notes"] == "Red":
+                qq, cc, dd = ribbon_quads_z(piece, zz, wv, colr)
+                if rec["head"]:
+                    qq.append(arrowhead(piece, zz[-1], wv[-1])); cc.append(colr); dd.append(dd[-1] + 0.01)
+                if at_face and inbound and rec["type"] == "Current":
+                    # a head outside the stub tip, its point just short of the ribbon, pointing along the flow into the box
+                    qq.append(arrowhead_touching(piece[0], piece[1], 0.0, wv[0], FRONT_STUB["head_gap"])); cc.append(colr); dd.append(dd[0] - 0.01)
+                surface_items.append((qq, cc, dd))
+            else:
+                exits = at_face and not inbound          # the outflow leaves through the face: head goes on the stub
+                for rp, rz, is_end in visible_runs(hz, piece, zz):
+                    sel = np.isin(piece[:, 0], rp[:, 0])
+                    qq, cc, _ = ribbon_quads_z(rp, rz, wv[sel], colr)
+                    if rec["head"] and is_end and not exits:
+                        qq.append(arrowhead(rp, rz[-1], wv[-1])); cc.append(colr)
+                    deep_items.append((qq, cc))
+                if exits:
+                    zs = np.full(len(stub), zz[-1])      # the stub keeps the depth it had at the face
+                    qq, cc, _ = ribbon_quads_z(stub, zs, wv[-1], colr)
+                    if rec["type"] == "Current":
+                        qq.append(arrowhead(stub, zs[-1], wv[-1])); cc.append(colr)
+                    front_items.append((qq, cc)); front_tips.append(("Blue", stub[-1], stub[-2], zs[-1]))
 
     # the observing array: a dashed line on the sea surface, hairline "moorings" down to the floor
     osnap_line = None
@@ -946,6 +958,58 @@ def offshore(piece, floor_fn, **kw):
     if len(out) < 2:
         return piece
     return smooth(densify(out), 3)
+
+
+def join_arrows(recs):
+    """Pass over the arrow records: give each a per-vertex width `wv`; where an arrow's end lies within
+    JOIN['dist'] km (and JOIN['dz'] m in height) of another arrow's vertex that is not that arrow's own end,
+    taper the width over the last JOIN['taper'] km to the other arrow's width and drop the head at the joint."""
+    for r in recs:
+        r["wv"] = np.full(len(r["piece"]), float(r["w"]))
+    for r in recs:
+        if r["type"] != "Current":
+            continue
+        P, zz = r["piece"], r["zz"]
+        for end in (0, -1):
+            if end == 0 and r["at_face"] and r["inbound"]:
+                continue                                    # the inflow stub tip has nothing to join
+            E, zE = P[end], zz[end]
+            best = None
+            for o in recs:
+                if o is r or o["type"] != "Current":
+                    continue
+                d = np.hypot(*(o["piece"] - E).T)
+                j = int(np.argmin(d))
+                if d[j] >= JOIN["dist"] or abs(o["zz"][j] - zE) >= JOIN["dz"]:
+                    continue
+                o_ends_here = np.hypot(*(o["piece"][-1] - E)) < JOIN["dist"]
+                o_starts_here = np.hypot(*(o["piece"][0] - E)) < JOIN["dist"]
+                if o_ends_here or (end == 0 and o_starts_here):
+                    continue        # the other arrow arrives here (it adapts, not us), or two arrows start together
+                if best is None or d[j] < best[0]:
+                    best = (d[j], o["w"])
+                    if end == -1 and o_starts_here and d[j] > 1.0:
+                        r["bridge"] = (o["piece"][0], float(o["zz"][0]))   # close the gap to the start of the next arrow
+            if best is None or abs(best[1] - r["w"]) < 1e-6:
+                if best is not None and end == -1:
+                    r["head"] = False                       # same width, but the flow continues: no head at the joint
+                continue
+            w_to = best[1]
+            seg = np.hypot(*np.diff(P, axis=0).T)
+            cum = np.concatenate([[0.0], np.cumsum(seg)])
+            t = cum if end == 0 else cum[-1] - cum          # distance from the joining end
+            u = np.clip(t / JOIN["taper"], 0, 1); u = u * u * (3 - 2 * u)
+            r["wv"] = np.minimum(r["wv"], w_to + (r["w"] - w_to) * u) if w_to < r["w"] else np.maximum(r["wv"], w_to + (r["w"] - w_to) * u)
+            if end == -1:
+                r["head"] = False
+    for r in recs:                                          # extend arriving arrows to the start of the one they join
+        if "bridge" in r:
+            (bx, by), bz = r.pop("bridge")
+            r["piece"] = np.vstack([r["piece"], [bx, by]]); r["zz"] = np.append(r["zz"], bz); r["wv"] = np.append(r["wv"], r["wv"][-1])
+            if r.get("s") is not None:
+                r["s"] = np.append(r["s"], r["s"][-1])
+            if np.ndim(r.get("colr", 0)) == 2:
+                r["colr"] = np.vstack([r["colr"], r["colr"][-1]])
 
 
 def conv_profile(piece, z_deep):
