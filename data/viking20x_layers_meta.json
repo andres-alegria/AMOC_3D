@@ -1,0 +1,59 @@
+{
+ "source": "VIKING20X.L46-KFS003, ORCA025 host grid, 10-year mean 2013-2023 (centred 2018-07)",
+ "grid": {
+  "width": 1440,
+  "height": 720,
+  "resolution_deg": 0.25
+ },
+ "note": "u/v rotated from the ORCA i/j axes to east/north; C-grid staggering averaged to T-points; speeds clipped at the 99.99 percentile",
+ "encoding": {
+  "R": "u component: (px - 128) / 127 * vel_scale = m/s",
+  "G": "v component: (px - 128) / 127 * vel_scale = m/s",
+  "B": "speed: (px / 255)^2 * max_speed = m/s (sqrt-encoded)",
+  "A": "ocean mask (255 = ocean, 0 = land)"
+ },
+ "layers": [
+  {
+   "name": "surface",
+   "depth_m": [
+    0,
+    500
+   ],
+   "levels": [
+    0,
+    18
+   ],
+   "vel_scale": 1.0791535377502441,
+   "max_speed": 1.0791535377502441,
+   "mean_speed": 0.039725422859191895
+  },
+  {
+   "name": "intermediate",
+   "depth_m": [
+    500,
+    1200
+   ],
+   "levels": [
+    19,
+    24
+   ],
+   "vel_scale": 0.5047874450683594,
+   "max_speed": 0.5052237510681152,
+   "mean_speed": 0.018220484256744385
+  },
+  {
+   "name": "deep",
+   "depth_m": [
+    1500,
+    2500
+   ],
+   "levels": [
+    27,
+    31
+   ],
+   "vel_scale": 0.2936480641365051,
+   "max_speed": 0.2936513423919678,
+   "mean_speed": 0.009382246062159538
+  }
+ ]
+}

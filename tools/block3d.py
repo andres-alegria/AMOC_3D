@@ -12,8 +12,8 @@ Inputs (../data/):
     block_5km.bil       GEBCO 2024 sub-ice warped to LAEA 60N/32.5W, 5 km (gdalwarp)
     land_block.geojson  Natural Earth 10 m land, same CRS, clipped to the block
     ice_block.geojson   Natural Earth 10 m glaciated areas, same
-and the VIKING20X layers (viking20x_layers.npz) and Basemap_v4.geojson from
-Ch_1_Figure_1/Basemap.
+and the VIKING20X layers (viking20x_layers.npz) and Basemap_v4.geojson, copied
+into data/ from Ch_1_Figure_1/Basemap.
 
 World coordinates: x east, y north, in km on the LAEA plane; z metres (negative
 below the sea surface). Everything is drawn back to front (painter's order on
@@ -33,9 +33,10 @@ from matplotlib.patches import PathPatch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "..", "data")
-BASEMAP = os.path.expanduser("~/Desktop/Chambas/2026_06_JPI_AMOC/_Figures/Ch_1_Figure_1/Basemap")
-VIKING_NPZ = os.path.join(BASEMAP, "VIKING20X_Currents", "data", "viking20x_layers.npz")
-ARROWS = os.path.join(BASEMAP, "Basemap_v4", "Basemap_v4.geojson")
+# Fig. 1.1 inputs, copied into data/ on 2 Nov 2026 from the figure's Basemap folder
+# (_Figures/Ch_1_Figure_1/Basemap: VIKING20X_Currents/data/ and Basemap_v4/), so the repo stands alone
+VIKING_NPZ = os.path.join(DATA, "viking20x_layers.npz")          # + viking20x_layers_meta.json beside it
+ARROWS = os.path.join(DATA, "Basemap_v4.geojson")
 PROJ4 = "+proj=laea +lat_0=60 +lon_0=-32.5 +datum=WGS84 +units=m"
 
 # --- the block -----------------------------------------------------------------
