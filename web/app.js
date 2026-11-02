@@ -23,7 +23,7 @@ const LIGHT_DIR = new THREE.Vector3(-1, 1, 1.4);   // light from the north-west,
 const DEFAULT = { az: 180, el: 41, exag: 85 };
 
 // data files live next to this script (web/data/), wherever the page itself is served from
-const DATA_V = "8";   // bump after re-running export_web.py so browsers drop their cached data files
+const DATA_V = "11";   // bump after re-running export_web.py so browsers drop their cached data files
 const D = name => new URL("data/" + name + "?v=" + DATA_V, import.meta.url);
 const stage = document.getElementById("stage");
 const status = document.getElementById("status");
@@ -268,11 +268,12 @@ function buildFront(front) {
   const grp = layer("labels");
   const mat = new THREE.LineBasicMaterial({ color: col("--ink") });
   for (const F of front) {
-    const z = F.z / 1000 + (F.cls === "surface" ? 0.005 : 0), lead = 110;   // leader length km — adjust here
-    const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(F.x + 25, F.y, z), new THREE.Vector3(F.x + lead, F.y, z)]);
+    const z = F.z / 1000 + (F.cls === "surface" ? 0.005 : 0), lead = 110, side = F.side || 1;   // leader length km — adjust here; side: away from the ribbon
+    const drop = 70;   // km toward the viewer (down the page) from the tip to the label — adjust here
+    const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(F.x + 20 * side, F.y - 10, z), new THREE.Vector3(F.x + lead * side, F.y - drop, z)]);
     grp.add(new THREE.Line(g, mat));
     const div = document.createElement("div"); div.className = "map-label kind-flow kind-front"; div.textContent = F.text;
-    const o = new CSS2DObject(div); o.position.set(F.x + lead + 15, F.y, z); o.center.set(0, 0.5);
+    const o = new CSS2DObject(div); o.position.set(F.x + (lead + 15) * side, F.y - drop, z); o.center.set(side > 0 ? 0 : 1, 0.5);
     grp.add(o);
   }
 }

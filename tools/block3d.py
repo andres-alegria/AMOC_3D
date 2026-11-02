@@ -77,7 +77,7 @@ LABEL_PT = dict(land=10.5, sea=10.5, feature=8.5, flow=9.5, obs=9.0)   # label s
 
 # --- VIKING ribbons — adjust density and look here --------------------------------
 BANDS = dict(                                 # name: (z metres, colour pair, speed percentile floor, separation km, min length km)
-    surface=(0.0, "surf", 48, 56, 170),
+    surface=(-200.0, "surf", 48, 56, 170),   # 2 Nov: 200 m down (was 0) so the land plateaus and shelves cover the ribbons
     deep=(-2000.0, "deep", 60, 46, 150),
 )
 DRAW_MID = False                              # the 500–1200 m band, off by default (clutter)
@@ -97,7 +97,8 @@ DRAW_LAND = False               # Natural Earth land/ice plates on the surface (
 DRAW_WATER = False              # translucent sea surface + water column on the cut faces (off since 2 Nov)
 # the inflow / outflow arrows that cross the front (south) face protrude from the box by `length` km, so the
 # reader sees what enters and leaves the subpolar basin; `leader` px is the label tick from the stub tip
-FRONT_STUB = dict(length=260.0, leader=26)
+FRONT_STUB = dict(length=520.0, leader=22, drop=14)   # leader px sideways and px down from the stub tip to the label
+SURF_SEED = -250.0              # m: VIKING surface ribbons are seeded only over floor deeper than this (they sit at BANDS z)
 FRONT_LABELS = dict(Red="Warm surface flow", Blue="Cold deep return flow")   # labels pointing at the stubs
 # deep (Blue) arrows: Fig. 1.1 drew them on a flat map, running over the shelves. In 3D a boundary current
 # belongs at the slope foot, so each vertex of the arrows listed in `ids` is walked downslope (toward the
@@ -565,7 +566,8 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
         for name, (z, pal, pct, dsep, minlen) in bands.items():
             U, V, wet = viking_band(name, lon, lat, north)
             # local coordinates for the tracer: km from the block's SW corner
-            lines, thr, vmax = streamlines(U, V, wet & (floor < -50), floor, dsep, minlen, pct)
+            seed = floor < (SURF_SEED if name == "surface" else -50)
+            lines, thr, vmax = streamlines(U, V, wet & seed, floor, dsep, minlen, pct)
             print(f"{name}: {len(lines)} ribbons, speed floor {thr:.3f} m/s, p97 {vmax:.3f}")
             c0, c1 = PAL[pal]
             for line, sp in lines:
@@ -575,6 +577,8 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
                 colr = mix(c0, c1, t)
                 if z >= 0:
                     zz = np.zeros(len(wl))
+                elif name == "surface":
+                    zz = np.full(len(wl), z)              # a flat sheet just below the surface; shelves and land hide it
                 else:
                     zz = smooth_z(np.maximum(z, floor_at(wl[:, 0], wl[:, 1]) + CLEAR))
                 if z >= 0:
@@ -631,7 +635,7 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
                         continue
                     if p["Notes"] == "Red":
                         if at_face and inbound:          # the inflow: stub outside the face + the path inside, one ribbon
-                            piece = np.vstack([stub[:-1], piece]); front_tips.append(("Red", stub[0], 0.0))
+                            piece = np.vstack([stub[:-1], piece]); front_tips.append(("Red", stub[0], stub[1], 0.0))
                         zz = np.zeros(len(piece)); colr = hex2rgb(PAL["arrow_surf"])
                     else:
                         if p["id"] in DEEP_SNAP["ids"]:
@@ -655,7 +659,7 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
                             qq, cc, _ = ribbon_quads_z(stub, zs, wpx, colr)
                             if p["Type"] == "Current":
                                 qq.append(arrowhead(stub, zs[-1], wpx)); cc.append(colr)
-                            front_items.append((qq, cc)); front_tips.append(("Blue", stub[-1], zs[-1]))
+                            front_items.append((qq, cc)); front_tips.append(("Blue", stub[-1], stub[-2], zs[-1]))
 
     # the observing array: a dashed line on the sea surface, hairline "moorings" down to the floor
     osnap_line = None
@@ -787,12 +791,14 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
                       linespacing=1.05, zorder=8, **style)
         txt.set_path_effects([pe.withStroke(linewidth=2.2, foreground=PAL["paper"], alpha=0.75)])
 
-    # in/outflow labels: a tick from each stub tip, text to the right
-    for cls, (tx, ty), tz in front_tips:
-        sx, sy = project(np.array([tx]), np.array([ty]), np.array([tz]))
-        ax.plot([sx[0] + 5, sx[0] + FRONT_STUB["leader"]], [sy[0], sy[0]], color=PAL["ink"], lw=0.6, zorder=8)
-        ax.text(sx[0] + FRONT_STUB["leader"] + 4, sy[0], FRONT_LABELS[cls], ha="left", va="center",
-                fontsize=LABEL_PT["flow"], family=FONT, color=PAL["ink"], style="italic", zorder=8)
+    # in/outflow labels: a tick from each stub tip, text on the side away from where the ribbon continues
+    for cls, (tx, ty), (nx_, ny_), tz in front_tips:
+        sx, sy = project(np.array([tx, nx_]), np.array([ty, ny_]), np.array([tz, tz]))
+        side = -1 if sx[1] > sx[0] else 1                  # ribbon runs right from the tip → label on the left
+        lx_, ly_ = sx[0] + FRONT_STUB["leader"] * side, sy[0] + FRONT_STUB["drop"]
+        ax.plot([sx[0] + 4 * side, lx_], [sy[0] + 3, ly_], color=PAL["ink"], lw=0.6, zorder=8)
+        ax.text(lx_ + 4 * side, ly_, FRONT_LABELS[cls], ha="left" if side > 0 else "right",
+                va="center", fontsize=LABEL_PT["flow"], family=FONT, color=PAL["ink"], style="italic", zorder=8)
 
     # --- E. depth scale on the west face, title --------------------------------------------
     for zt in (0, -1000, -2000, -3000, -4000, -5000):

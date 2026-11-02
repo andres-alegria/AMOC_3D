@@ -41,11 +41,17 @@ def main():
     bands["intermediate"] = (-850.0, "mid", 55, 44, 150)
     for name, (z, pal, pct, dsep, minlen) in bands.items():
         U, V, wet = B.viking_band(name, lon, lat, north)
-        lines, thr, vmax = B.streamlines(U, V, wet & (floor < -50), floor, dsep, minlen, pct)
+        seed = floor < (B.SURF_SEED if name == "surface" else -50)
+        lines, thr, vmax = B.streamlines(U, V, wet & seed, floor, dsep, minlen, pct)
         recs = []
         for line, sp in lines:
             wl = line + np.array([B.X0, B.Y0])
-            zz = np.zeros(len(wl)) if z >= 0 else B.smooth_z(np.maximum(z, fl(wl[:, 0], wl[:, 1]) + B.CLEAR))
+            if z >= 0:
+                zz = np.zeros(len(wl))
+            elif name == "surface":
+                zz = np.full(len(wl), z)       # flat sheet 200 m down, as in the static render
+            else:
+                zz = B.smooth_z(np.maximum(z, fl(wl[:, 0], wl[:, 1]) + B.CLEAR))
             recs.append(dict(p=np.round(np.column_stack([wl, zz]), 1).tolist(),
                              s=np.round(sp / vmax, 3).tolist()))
         out["bands"][name] = dict(z=z, vmax=float(vmax), lines=recs)
@@ -77,7 +83,8 @@ def main():
                 if p["Notes"] == "Red":
                     if at_face and inbound:             # inflow: stub + inside path as one ribbon
                         piece = np.vstack([stub[:-1], piece])
-                        out["front"].append(dict(cls="surface", x=round(float(stub[0, 0]), 1), y=round(float(stub[0, 1]), 1), z=0.0, text=B.FRONT_LABELS["Red"]))
+                        out["front"].append(dict(cls="surface", x=round(float(stub[0, 0]), 1), y=round(float(stub[0, 1]), 1), z=0.0, text=B.FRONT_LABELS["Red"],
+                                                 side=-1 if stub[1, 0] > stub[0, 0] else 1))
                     zz = np.zeros(len(piece))
                 elif p["Notes"] == "Blue":
                     if p["id"] in B.DEEP_SNAP["ids"]:
@@ -88,7 +95,8 @@ def main():
                         zs = float(zz[-1])
                         out["arrows"].append(dict(id=p["id"], cls="deep", type=p["Type"], w=int(p["Thickness"]), head=True,
                                                   p=np.round(np.column_stack([stub, np.full(len(stub), zs)]), 1).tolist()))
-                        out["front"].append(dict(cls="deep", x=round(float(stub[-1, 0]), 1), y=round(float(stub[-1, 1]), 1), z=round(zs), text=B.FRONT_LABELS["Blue"]))
+                        out["front"].append(dict(cls="deep", x=round(float(stub[-1, 0]), 1), y=round(float(stub[-1, 1]), 1), z=round(zs), text=B.FRONT_LABELS["Blue"],
+                                                 side=-1 if stub[-2, 0] > stub[-1, 0] else 1))
                 else:   # the sinking ribbon: surface → deep along its length, with the descent fraction s for the colour
                     z_deep = B.smooth_z(np.maximum(-2000.0, fl(piece[:, 0], piece[:, 1]) + B.CLEAR))
                     s, zz = B.conv_profile(piece, z_deep)
