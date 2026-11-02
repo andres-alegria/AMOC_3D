@@ -90,6 +90,12 @@ PLUMES = [  # lon, lat, radius km, bottom m — the purple "deep-water formation
 WISPS = dict(n=0, height=2600.0, spread=0.38, amp=0.07, lw=(2.4, 0.5))   # heat-loss wisps above each plume (n=0: off, dropped 2 Nov): count, height m (exaggerated), spread/amplitude as fraction of radius, line width px thick → thin
 CONV_FADE = (0.08, 0.92)        # along a Convection arrow: fraction where the descent starts / ends
 CONV_SPLIT = -60.0              # m: shallower than this the sinking ribbon is drawn above the sea surface
+DRAW_LAND = False               # Natural Earth land/ice plates on the surface (off since 2 Nov: the bathymetry is the subject)
+DRAW_WATER = False              # translucent sea surface + water column on the cut faces (off since 2 Nov)
+# the inflow / outflow arrows that cross the front (south) face protrude from the box by `length` km, so the
+# reader sees what enters and leaves the subpolar basin; `leader` px is the label tick from the stub tip
+FRONT_STUB = dict(length=260.0, leader=26)
+FRONT_LABELS = dict(Red="Warm surface flow", Blue="Cold deep return flow")   # labels pointing at the stubs
 # deep (Blue) arrows: Fig. 1.1 drew them on a flat map, running over the shelves. In 3D a boundary current
 # belongs at the slope foot, so each vertex of the arrows listed in `ids` is walked downslope (toward the
 # deepest floor on a ring of radius `look` km, in `step` km moves) until the floor is deeper than `target`;
@@ -108,7 +114,6 @@ LABELS = [
     (-3.5, 56.5, "Scotland", "land"), (9.0, 62.0, "Norway", "land"), (-55.5, 60.0, "Labrador\nSea", "sea"),
     (-36.5, 62.5, "Irminger\nSea", "sea"), (-24.0, 60.0, "Iceland Basin", "sea"), (-6.0, 69.0, "Nordic Seas", "sea"),
     (-26.5, 68.0, "Denmark Strait", "feature"), (-8.5, 62.6, "Faroe Bank\nChannel", "feature"), (-28.5, 56.0, "Reykjanes Ridge", "feature"),
-    (-20.0, 50.0, "warm surface flow", "flow"), (-42.5, 50.5, "cold deep return flow", "flow"),
     (-45.5, 57.0, "deep-water\nconversion", "flow"),
     (-52.5, 51.5, "OSNAP West", "obs"), (-14.5, 56.6, "OSNAP East", "obs"),
 ]
@@ -419,6 +424,41 @@ def clip_to_block(pts):
     return [p for p in pieces if len(p) >= 2]
 
 
+def south_crossing(P):
+    """First segment of path P (block km) that crosses the front face y = Y0 inside the block's x range."""
+    for i in range(len(P) - 1):
+        a, b = P[i], P[i + 1]
+        if (a[1] - Y0) * (b[1] - Y0) < 0 and X0 < a[0] < X1:
+            t = (Y0 - a[1]) / (b[1] - a[1])
+            return i, a + t * (b - a)
+    return None
+
+
+def front_split(P):
+    """Split a (densified) path at the front face. Returns (inside part ending/starting exactly on the face,
+    stub of FRONT_STUB['length'] km outside the face ordered in the flow direction, inbound flag), or None
+    when the path does not cross the face. The stub follows the drawn path while it lasts and continues
+    straight beyond its end."""
+    hit = south_crossing(P)
+    if hit is None:
+        return None
+    i, X = hit
+    inbound = P[i + 1][1] > Y0
+    outside = P[:i + 1][::-1] if inbound else P[i + 1:]
+    inside = np.vstack([X, P[i + 1:]]) if inbound else np.vstack([P[:i + 1], X])
+    stub, L, prev = [X], 0.0, X
+    for q in outside:
+        d = np.hypot(*(q - prev))
+        if L + d >= FRONT_STUB["length"]:
+            stub.append(prev + (q - prev) * (FRONT_STUB["length"] - L) / d); L = FRONT_STUB["length"]; break
+        stub.append(q); L += d; prev = q
+    if L < FRONT_STUB["length"]:
+        u = stub[-1] - stub[-2] if len(stub) > 1 else np.array([0.0, -1.0]); u = u / np.hypot(*u)
+        stub.append(stub[-1] + u * (FRONT_STUB["length"] - L))
+    stub = np.array(stub)
+    return inside, (stub[::-1] if inbound else stub), inbound
+
+
 def densify(pts, step=15.0):
     out = [pts[0]]
     for a, b in zip(pts[:-1], pts[1:]):
@@ -471,6 +511,7 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
     print(f"camera: scale {SCALE:.3f} px/km, ZK {ZK:.4f} px/m, exaggeration {EXAG:.0f}x")
     hz = Horizon(np.where(H > 0, 15.0, floor), xs, ys)        # land plates occlude too
     deep_items = []           # drawn after the floor, clipped by the horizon: (quads, cols)
+    front_items, front_tips = [], []   # arrow stubs outside the front face (drawn after the faces) and their tips for the labels
 
     fig = plt.figure(figsize=(W / 100, H_PX / 100), dpi=100)
     ax = fig.add_axes([0, 0, 1, 1]); ax.set_xlim(0, W); ax.set_ylim(H_PX, 0); ax.axis("off")
@@ -549,7 +590,19 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
             for part in f["geometry"]["coordinates"]:
                 c = np.array(part)
                 bx, by = ll_to_block(c[:, 0], c[:, 1])
-                for piece in clip_to_block(np.column_stack([bx, by])):
+                P = np.column_stack([bx, by])
+                stub, inbound = None, False
+                fs = front_split(densify(P)) if p["Notes"] in ("Red", "Blue") else None
+                if fs is not None:
+                    P, stub, inbound = fs
+                pieces = clip_to_block(P)
+                if stub is not None and pieces:          # clip_to_block drops the point on the face: put it back
+                    if inbound:
+                        pieces[0] = np.vstack([stub[-1], pieces[0]])
+                    else:
+                        pieces[-1] = np.vstack([pieces[-1], stub[0]])
+                for ip, piece in enumerate(pieces):
+                    at_face = stub is not None and ((inbound and ip == 0) or (not inbound and ip == len(pieces) - 1))
                     piece = smooth(densify(piece))
                     wpx = ARROW_W[int(p["Thickness"])]
                     if p["Type"] == "Eddy":
@@ -573,6 +626,8 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
                                 deep_items.append((qq, cc))
                         continue
                     if p["Notes"] == "Red":
+                        if at_face and inbound:          # the inflow: stub outside the face + the path inside, one ribbon
+                            piece = np.vstack([stub[:-1], piece]); front_tips.append(("Red", stub[0], 0.0))
                         zz = np.zeros(len(piece)); colr = hex2rgb(PAL["arrow_surf"])
                     else:
                         if p["id"] in DEEP_SNAP["ids"]:
@@ -585,11 +640,18 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
                         surface_items.append((qq, cc, dd))
                     else:
                         zz = smooth_z(zz)
+                        exits = at_face and not inbound          # the outflow leaves through the face: head goes on the stub
                         for rp, rz, is_end in visible_runs(hz, piece, zz):
                             qq, cc, _ = ribbon_quads_z(rp, rz, wpx, colr)
-                            if p["Type"] == "Current" and is_end:
+                            if p["Type"] == "Current" and is_end and not exits:
                                 qq.append(arrowhead(rp, rz[-1], wpx)); cc.append(colr)
                             deep_items.append((qq, cc))
+                        if exits:
+                            zs = np.full(len(stub), zz[-1])      # the stub keeps the depth it had at the face
+                            qq, cc, _ = ribbon_quads_z(stub, zs, wpx, colr)
+                            if p["Type"] == "Current":
+                                qq.append(arrowhead(stub, zs[-1], wpx)); cc.append(colr)
+                            front_items.append((qq, cc)); front_tips.append(("Blue", stub[-1], zs[-1]))
 
     # the observing array: a dashed line on the sea surface, hairline "moorings" down to the floor
     osnap_line = None
@@ -656,11 +718,18 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
         water = np.vstack([np.column_stack([sxt, syt]), np.column_stack([sxf, syf])[::-1]])
         crust = np.vstack([np.column_stack([sxf, syf]), np.column_stack([sxb, syb])[::-1]])
         ax.add_patch(plt.Polygon(crust, closed=True, fc=crust_col, ec="none", zorder=3))
-        ax.add_patch(plt.Polygon(water, closed=True, fc=PAL["face_water"], ec="none", alpha=PAL["face_water_alpha"], zorder=3))
+        if DRAW_WATER:
+            ax.add_patch(plt.Polygon(water, closed=True, fc=PAL["face_water"], ec="none", alpha=PAL["face_water_alpha"], zorder=3))
         ax.plot(sxf, syf, color=PAL["ink_soft"], lw=0.8, zorder=3.1)
     # south face (front), west face (left)
     face(np.concatenate([[X0], xs, [X1]]), np.full(nx + 2, Y0), np.concatenate([[floor[0, 0]], floor[0, :], [floor[0, -1]]]), PAL["face_crust"])
     face(np.full(ny + 2, X0), np.concatenate([[Y0], ys, [Y1]]), np.concatenate([[floor[0, 0]], floor[:, 0], [floor[-1, 0]]]), PAL["face_crust_w"])
+    if front_items:           # arrow stubs protruding from the front face, over the face
+        q4, c4 = [], []
+        for qq, cc in front_items:
+            q4 += qq; c4 += cc
+        c4 = [np.append(c, 1.0) if len(c) == 3 else c for c in c4]
+        ax.add_collection(PolyCollection(q4, facecolors=c4, edgecolors=c4, linewidths=0.35, zorder=3.5))
     # block outline
     for (xa, ya), (xb, yb) in [((X0, Y0), (X1, Y0)), ((X0, Y0), (X0, Y1))]:
         for z in (0.0, ZBASE):
@@ -671,11 +740,13 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
     # --- D. the sea surface, the land plates, then everything on the surface --------------
     cx = np.array([X0, X1, X1, X0]); cy = np.array([Y0, Y0, Y1, Y1])
     sx, sy = project(cx, cy, np.zeros(4))
-    ax.add_patch(plt.Polygon(np.column_stack([sx, sy]), closed=True, fc=PAL["water"], ec="none", alpha=PAL["water_alpha"], zorder=4))
-    for rings in geojson_polys(os.path.join(DATA, "land_block.geojson")):
-        poly_patch(ax, rings, 15.0, PAL["land"], PAL["coast"], 0.5, zorder=5)
-    for rings in geojson_polys(os.path.join(DATA, "ice_block.geojson")):
-        poly_patch(ax, rings, 16.0, PAL["ice"], None, 0.0, zorder=5.1)
+    if DRAW_WATER:
+        ax.add_patch(plt.Polygon(np.column_stack([sx, sy]), closed=True, fc=PAL["water"], ec="none", alpha=PAL["water_alpha"], zorder=4))
+    if DRAW_LAND:
+        for rings in geojson_polys(os.path.join(DATA, "land_block.geojson")):
+            poly_patch(ax, rings, 15.0, PAL["land"], PAL["coast"], 0.5, zorder=5)
+        for rings in geojson_polys(os.path.join(DATA, "ice_block.geojson")):
+            poly_patch(ax, rings, 16.0, PAL["ice"], None, 0.0, zorder=5.1)
     for top in plume_tops:
         ax.add_patch(plt.Polygon(top, closed=True, fc=PAL["plume"], ec="none", alpha=0.35, zorder=5.5))
     if osnap_line is not None:
@@ -711,6 +782,13 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
         txt = ax.text(sx[0], sy[0], text, ha="center", va="center", fontsize=LABEL_PT[kind], family=FONT,
                       linespacing=1.05, zorder=8, **style)
         txt.set_path_effects([pe.withStroke(linewidth=2.2, foreground=PAL["paper"], alpha=0.75)])
+
+    # in/outflow labels: a tick from each stub tip, text to the right
+    for cls, (tx, ty), tz in front_tips:
+        sx, sy = project(np.array([tx]), np.array([ty]), np.array([tz]))
+        ax.plot([sx[0] + 5, sx[0] + FRONT_STUB["leader"]], [sy[0], sy[0]], color=PAL["ink"], lw=0.6, zorder=8)
+        ax.text(sx[0] + FRONT_STUB["leader"] + 4, sy[0], FRONT_LABELS[cls], ha="left", va="center",
+                fontsize=LABEL_PT["flow"], family=FONT, color=PAL["ink"], style="italic", zorder=8)
 
     # --- E. depth scale on the west face, title --------------------------------------------
     for zt in (0, -1000, -2000, -3000, -4000, -5000):

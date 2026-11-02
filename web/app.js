@@ -23,7 +23,8 @@ const LIGHT_DIR = new THREE.Vector3(-1, 1, 1.4);   // light from the north-west,
 const DEFAULT = { az: 180, el: 41, exag: 85 };
 
 // data files live next to this script (web/data/), wherever the page itself is served from
-const D = name => new URL("data/" + name, import.meta.url);
+const DATA_V = "7";   // bump after re-running export_web.py so browsers drop their cached data files
+const D = name => new URL("data/" + name + "?v=" + DATA_V, import.meta.url);
 const stage = document.getElementById("stage");
 const status = document.getElementById("status");
 const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -72,6 +73,7 @@ async function load() {
   buildPlumes(lines.plumes);
   buildOsnap(lines.osnap);
   buildLabels(lines.labels);
+  buildFront(lines.front || []);
   buildDepthScale(meta);
   const cx = (meta.x0 + meta.x1) / 2, cy = (meta.y0 + meta.y1) / 2;
   setupCamera(new THREE.Vector3(cx, cy - 150, 0));
@@ -209,7 +211,7 @@ function buildArrows(arrows) {
     const l = fatLine(pts, a.cls === "conv" ? cols : null, wpx);
     if (a.cls !== "conv") { l.material.color = color; l.material.vertexColors = false; l.material.needsUpdate = true; }
     grp.add(l);
-    if (a.type === "Current") {
+    if (a.type === "Current" && a.head !== false) {
       const n = a.p.length, [x1, y1, z1] = a.p[n - 1], [x0, y0] = a.p[n - 2];
       const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
       const len = HEAD.len * wpx, half = HEAD.half * wpx, z = z1 / 1000 + (a.cls === "surface" ? 0.006 : 0);
@@ -257,6 +259,20 @@ function buildLabels(labels) {
     const div = document.createElement("div"); div.className = `map-label kind-${L.kind}`;
     div.innerHTML = L.text.replace("\n", "<br>");
     const o = new CSS2DObject(div); o.position.set(L.x, L.y, L.kind === "land" ? 0.015 : 0.002);
+    grp.add(o);
+  }
+}
+
+// in/outflow labels at the tips of the arrow stubs protruding from the front face, with a short leader
+function buildFront(front) {
+  const grp = layer("labels");
+  const mat = new THREE.LineBasicMaterial({ color: col("--ink") });
+  for (const F of front) {
+    const z = F.z / 1000 + (F.cls === "surface" ? 0.005 : 0), lead = 110;   // leader length km — adjust here
+    const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(F.x + 25, F.y, z), new THREE.Vector3(F.x + lead, F.y, z)]);
+    grp.add(new THREE.Line(g, mat));
+    const div = document.createElement("div"); div.className = "map-label kind-flow kind-front"; div.textContent = F.text;
+    const o = new CSS2DObject(div); o.position.set(F.x + lead + 15, F.y, z); o.center.set(0, 0.5);
     grp.add(o);
   }
 }
