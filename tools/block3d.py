@@ -104,7 +104,7 @@ DRAW_LAND = False               # Natural Earth land/ice plates on the surface (
 DRAW_WATER = False              # translucent sea surface + water column on the cut faces (off since 2 Nov)
 # the inflow / outflow arrows that cross the front (south) face protrude from the box by `length` km, so the
 # reader sees what enters and leaves the subpolar basin; `leader` px is the label tick from the stub tip
-FRONT_STUB = dict(length=520.0, leader=22, drop=14, match_outflow=True)   # leader px sideways/down from the tip to the label; match_outflow: the inflow stub reaches as far south as the outflow tip
+FRONT_STUB = dict(length=520.0, leader=22, drop=14, match_outflow=True, head_gap=0.6)   # leader px sideways/down from the tip to the label; match_outflow: the inflow stub reaches as far south as the outflow tip; head_gap: space (× line width) between the inflow tip head and the ribbon
 SURF_SEED = -250.0              # m: VIKING surface ribbons are seeded only over floor deeper than this (they sit at BANDS z)
 FRONT_LABELS = dict(Red="Warm surface flow", Blue="Cold deep return flow")   # labels pointing at the stubs
 FRONT_LABEL_SIDE = dict(Red=1)  # force a label side (+1 right, -1 left); classes not listed go to the side away from the ribbon
@@ -410,15 +410,15 @@ def ribbon_quads(line, z, width_px, color, depth_key):
     return list(quads), list(col), list((d[:-1] + d[1:]) / 2 + depth_key)
 
 
-def arrowhead_touching(point, towards, z, width_px):
-    """Triangle whose point sits exactly on `point` (block km) and whose body lies on the far side from
-    `towards`: a head that just touches the end of a ribbon and points along it."""
+def arrowhead_touching(point, towards, z, width_px, gap=0.0):
+    """Triangle whose point sits on `point` (block km), set back by `gap` × width_px pixels, with its body on
+    the far side from `towards`: a head that just clears the end of a ribbon and points along it."""
     sx, sy = project(np.array([point[0], towards[0]]), np.array([point[1], towards[1]]), z)
     dx, dy = sx[1] - sx[0], sy[1] - sy[0]
     L = math.hypot(dx, dy) + 1e-9
     ux, uy = dx / L, dy / L
     nx_, ny_ = -uy, ux
-    tip = np.array([sx[0], sy[0]])
+    tip = np.array([sx[0], sy[0]]) - np.array([ux, uy]) * width_px * gap
     base = tip - np.array([ux, uy]) * width_px * 2.2
     hw = width_px * 1.25
     return np.array([tip, base + np.array([nx_, ny_]) * hw, base - np.array([nx_, ny_]) * hw])
@@ -730,7 +730,7 @@ def render(out_png, out_svg=None, fast=False, viking=True, arrows=True):
                             qq.append(arrowhead(piece, zz[-1], wpx)); cc.append(colr); dd.append(dd[-1] + 0.01)
                         if at_face and inbound and p["Type"] == "Current":
                             # a head outside the stub tip, its point just touching the ribbon, pointing along the flow into the box
-                            qq.append(arrowhead_touching(piece[0], piece[1], 0.0, wpx)); cc.append(colr); dd.append(dd[0] - 0.01)
+                            qq.append(arrowhead_touching(piece[0], piece[1], 0.0, wpx, FRONT_STUB["head_gap"])); cc.append(colr); dd.append(dd[0] - 0.01)
                         surface_items.append((qq, cc, dd))
                     else:
                         zz = smooth_z(zz)

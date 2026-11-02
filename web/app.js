@@ -18,12 +18,12 @@ const FLOOR_STOPS = [[0, col("--floor0")], [-500, col("--floor1")], [-1500, col(
                      [-3000, col("--floor3")], [-4500, col("--floor4")], [-5600, col("--floor5")]];
 const RIBBON_W = [0.9, 3.4];                 // px, slow → fast (× devicePixelRatio below)
 const ARROW_W = { 1: 5, 2: 9, 3: 14 };       // px per Thickness class
-const HEAD = { len: 5.0, half: 3.2 };        // arrowhead size in km per px of line width
+const HEAD = { len: 5.0, half: 3.2, gap: 1.4 };   // arrowhead size in km per px of line width; gap: space between the inflow tip head and the ribbon
 const LIGHT_DIR = new THREE.Vector3(-1, 1, 1.4);   // light from the north-west, above
 const DEFAULT = { az: 180, el: 41, exag: 85 };
 
 // data files live next to this script (web/data/), wherever the page itself is served from
-const DATA_V = "18";   // bump after re-running export_web.py so browsers drop their cached data files
+const DATA_V = "19";   // bump after re-running export_web.py so browsers drop their cached data files
 const D = name => new URL("data/" + name + "?v=" + DATA_V, import.meta.url);
 const stage = document.getElementById("stage");
 const status = document.getElementById("status");
@@ -225,7 +225,8 @@ function buildArrows(arrows) {
     if (a.type === "Current" && a.head_start) {        // inflow stub: a head outside the tip, its point just touching the ribbon
       const [x0, y0, z0] = a.p[0], [x1, y1] = a.p[1];
       const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, len = HEAD.len * wpx;
-      const at = [x0 - ux * len * 0.7, y0 - uy * len * 0.7, z0];   // addHead puts the point 0.7·len ahead of `at`
+      const back = len * 0.7 + HEAD.gap * wpx;                    // addHead puts the point 0.7·len ahead of `at`; plus the gap
+      const at = [x0 - ux * back, y0 - uy * back, z0];
       addHead([at[0] - ux, at[1] - uy, z0], at);
     }
   }
